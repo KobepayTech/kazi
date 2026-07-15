@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Job Search</title>
+    <meta
+      name="description"
+      content="Evaluate job fit, tailor your CV, draft cover letters, and prep for interviews - powered by Claude."
+    />
+    <link rel="stylesheet" href="/styles.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐦</text></svg>"
+    />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo">🐦</span>
+        <div>
+          <h1>AI Job Search</h1>
+          <p class="tagline">Fit scoring, tailored CVs, cover letters &amp; interview prep</p>
+        </div>
+      </div>
+      <div id="status" class="status" title="Server status"></div>
+    </header>
+
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="evaluate" role="tab">Evaluate fit</button>
+      <button class="tab" data-tab="cover-letter" role="tab">Cover letter</button>
+      <button class="tab" data-tab="cv" role="tab">Tailor CV</button>
+      <button class="tab" data-tab="interview" role="tab">Interview prep</button>
+      <button class="tab" data-tab="profile" role="tab">My profile</button>
+    </nav>
+
+    <main>
+      <!-- Workflow panels share the job-input column -->
+      <section id="panel-work" class="panel active">
+        <div class="grid">
+          <div class="col">
+            <h2 id="work-title">Evaluate fit</h2>
+            <p id="work-desc" class="desc"></p>
+
+            <label class="field">
+              <span>Job posting URL (optional)</span>
+              <div class="url-row">
+                <input id="jobUrl" type="url" placeholder="https://..." />
+                <button id="fetchBtn" class="ghost" type="button">Fetch</button>
+              </div>
+            </label>
+
+            <label class="field">
+              <span>Job posting text</span>
+              <textarea
+                id="jobText"
+                rows="12"
+                placeholder="Paste the job description here (or fetch from a URL above)."
+              ></textarea>
+            </label>
+
+            <label class="field" id="formatField" hidden>
+              <span>Cover letter format</span>
+              <select id="format">
+                <option value="text">Plain text</option>
+                <option value="latex">Plain text + LaTeX (cover.cls)</option>
+              </select>
+            </label>
+
+            <button id="runBtn" class="primary" type="button">Run</button>
+            <p id="profileHint" class="hint"></p>
+          </div>
+
+          <div class="col">
+            <div class="result-head">
+              <h2>Result</h2>
+              <button id="copyBtn" class="ghost" type="button" hidden>Copy</button>
+            </div>
+            <div id="output" class="output">
+              <p class="placeholder">Your result will appear here.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Profile panel -->
+      <section id="panel-profile" class="panel">
+        <h2>My profile</h2>
+        <p class="desc">
+          Saved in your browser only (localStorage) and sent with each request so results are
+          personalised. Nothing is stored on the server.
+        </p>
+        <div class="profile-grid" id="profileForm"></div>
+        <div class="profile-actions">
+          <button id="saveProfile" class="primary" type="button">Save profile</button>
+          <button id="clearProfile" class="ghost" type="button">Clear</button>
+          <span id="profileSaved" class="saved" hidden>Saved ✓</span>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>Server pays for AI usage - please be considerate. Rate limited per visitor.</span>
+      <span
+        >Based on the
+        <a href="https://github.com/MadsLorentzen/ai-job-search" target="_blank" rel="noopener"
+          >AI Job Search</a
+        >
+        framework. Not affiliated with Anthropic.</span
+      >
+    </footer>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
