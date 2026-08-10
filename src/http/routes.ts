@@ -1,24 +1,12 @@
-import { timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import type { Kobeos } from '../app.ts';
+import type { Platform, TenantContext } from '../app.ts';
 import type { RealtimeScope } from '../data/store.ts';
 import { STATUS_LABELS } from '../domain/applications.ts';
-import { buildJobCard } from '../domain/cards.ts';
-import { scoreMatch } from '../domain/matching.ts';
-import { formatSalaryLine } from '../domain/salary.ts';
-import type {
-  Actor,
-  ApplicationStatus,
-  EducationLevel,
-  EmploymentType,
-  JobCategory,
-  SwipeDirection,
-  WorkMode,
-} from '../domain/types.ts';
 import { APPLICATION_STATUSES } from '../domain/types.ts';
-import { AGENCY_SCOPE_ID } from '../services/events.ts';
+import type { Actor, ApplicationStatus, EducationLevel, JobCategory, SwipeDirection } from '../domain/types.ts';
 import { AppError } from '../services/errors.ts';
+import { AGENCY_SCOPE_ID } from '../services/events.ts';
 import { HANDLED, Router, html, json, type Ctx } from './router.ts';
 
 // ------------------------------------------------------------------ helpers
@@ -56,23 +44,18 @@ function optBool(body: Record<string, unknown>, key: string): boolean | null {
 function strArray(body: Record<string, unknown>, key: string): string[] {
   const value = body[key];
   if (value === null || value === undefined) return [];
+  if (typeof value === 'string') {
+    return value.split(',').map((entry) => entry.trim()).filter((entry) => entry.length > 0);
+  }
   if (!Array.isArray(value)) throw AppError.badRequest('invalid_field', `"${key}" must be a list.`);
   return value.filter((entry): entry is string => typeof entry === 'string');
 }
 
 function bearer(ctx: Ctx): string | null {
   const header = ctx.req.headers.authorization;
-  if (typeof header === 'string' && header.toLowerCase().startsWith('bearer ')) {
-    return header.slice(7).trim();
-  }
+  if (typeof header === 'string' && header.toLowerCase().startsWith('bearer ')) return header.slice(7).trim();
   // EventSource cannot set headers, so the live streams accept a query token.
   return ctx.query.get('token');
-}
-
-function safeEquals(a: string, b: string): boolean {
-  const left = Buffer.from(a);
-  const right = Buffer.from(b);
-  return left.length === right.length && timingSafeEqual(left, right);
 }
 
 function readPage(name: string): string {
@@ -86,33 +69,39 @@ function statusFrom(value: unknown): ApplicationStatus {
   return value as ApplicationStatus;
 }
 
-export function createRouter(app: Kobeos): Router {
+export function createRouter(platform: Platform): Router {
   const router = new Router();
 
-  const requireAgency = (ctx: Ctx): Actor => {
+  /** Agency console: the tenant's API key both authenticates and selects the tenant. */
+  const requireAgency = (ctx: Ctx): { context: TenantContext; actor: Actor } => {
     const supplied =
       (typeof ctx.req.headers['x-agency-key'] === 'string' ? ctx.req.headers['x-agency-key'] : null) ??
       ctx.query.get('key');
-    if (supplied === null || !safeEquals(supplied, app.config.agencyApiKey)) {
-      throw AppError.unauthorised('Soko Huru staff key required.');
-    }
-    const staffId = optStr(ctx.body, 'staffId') ?? ctx.query.get('staffId') ?? 'soko-huru-staff';
-    return { kind: 'agency', id: staffId };
+    const context = platform.tenantForApiKey(supplied);
+    if (context === null) throw AppError.unauthorised('Agency staff key required.');
+    const staffId = optStr(ctx.body, 'staffId') ?? ctx.query.get('staffId') ?? 'agency-staff';
+    return { context, actor: { kind: 'agency', id: staffId } };
   };
 
-  const requireEmployer = (ctx: Ctx) => app.access.requireEmployer(bearer(ctx));
+  const requireEmployer = (ctx: Ctx): { context: TenantContext; employerId: string } => {
+    const session = platform.sessionContext(bearer(ctx));
+    if (session === null || session.subject.kind !== 'employer') throw AppError.unauthorised();
+    session.context.store.markEmployerSeen(session.subject.id);
+    return { context: session.context, employerId: session.subject.id };
+  };
 
-  const requireApplicant = (ctx: Ctx): string => {
-    const applicantId = app.access.requireApplicantId(bearer(ctx));
+  const requireApplicant = (ctx: Ctx): { context: TenantContext; applicantId: string } => {
+    const session = platform.sessionContext(bearer(ctx));
+    if (session === null || session.subject.kind !== 'applicant') throw AppError.unauthorised();
     const pathId = ctx.params.id;
-    if (pathId !== undefined && pathId !== applicantId) {
-      throw AppError.forbidden('You can only work with your own applicant profile.');
+    if (pathId !== undefined && pathId !== session.subject.id) {
+      throw AppError.forbidden('You can only work with your own profile.');
     }
-    return applicantId;
+    return { context: session.context, applicantId: session.subject.id };
   };
 
-  /** Server-sent events with replay, used by both live dashboards. */
-  const stream = (ctx: Ctx, scope: RealtimeScope, scopeId: string): typeof HANDLED => {
+  /** Server-sent events with replay, used by all three live views. */
+  const stream = (ctx: Ctx, context: TenantContext, scope: RealtimeScope, scopeId: string): typeof HANDLED => {
     ctx.res.writeHead(200, {
       'content-type': 'text/event-stream; charset=utf-8',
       'cache-control': 'no-cache, no-transform',
@@ -121,18 +110,15 @@ export function createRouter(app: Kobeos): Router {
     });
 
     const lastEventId = ctx.req.headers['last-event-id'];
-    const since = Number(
-      (typeof lastEventId === 'string' ? lastEventId : null) ?? ctx.query.get('since') ?? '0',
-    );
-
+    const since = Number((typeof lastEventId === 'string' ? lastEventId : null) ?? ctx.query.get('since') ?? '0');
     const write = (event: { id: number; type: string; payload: unknown }): void => {
       ctx.res.write(`id: ${event.id}\nevent: ${event.type}\ndata: ${JSON.stringify(event.payload)}\n\n`);
     };
 
-    for (const event of app.bus.replay(scope, scopeId, Number.isFinite(since) ? since : 0)) write(event);
+    for (const event of context.bus.replay(scope, scopeId, Number.isFinite(since) ? since : 0)) write(event);
     ctx.res.write(': connected\n\n');
 
-    const unsubscribe = app.bus.subscribe(scope, scopeId, write);
+    const unsubscribe = context.bus.subscribe(scope, scopeId, write);
     const heartbeat = setInterval(() => ctx.res.write(': ping\n\n'), 25_000);
     ctx.req.on('close', () => {
       clearInterval(heartbeat);
@@ -145,244 +131,332 @@ export function createRouter(app: Kobeos): Router {
   // ------------------------------------------------------------------ pages
 
   router.get('/', (ctx) => html(ctx.res, 200, readPage('index.html')));
-  router.get('/swipe', (ctx) => html(ctx.res, 200, readPage('swipe.html')));
-  router.get('/agency', (ctx) => html(ctx.res, 200, readPage('agency.html')));
-  router.get('/client/:slug', (ctx) => html(ctx.res, 200, readPage('employer.html')));
-  router.get('/client/:slug/jobs/:jobSlug', (ctx) => html(ctx.res, 200, readPage('employer.html')));
+  router.get('/jobs', (ctx) => html(ctx.res, 200, readPage('swipe.html')));
+  router.get('/admin', (ctx) => html(ctx.res, 200, readPage('agency.html')));
+  router.get('/e/:code', (ctx) => html(ctx.res, 200, readPage('employer.html')));
   router.get('/health', () => ({ ok: true, service: 'kobeos' }));
+
+  router.get('/uploads/:name', (ctx) => {
+    const file = platform.uploads.read(`/uploads/${ctx.params.name ?? ''}`);
+    ctx.res.writeHead(200, { 'content-type': file.contentType, 'cache-control': 'public, max-age=86400' });
+    ctx.res.end(file.body);
+    return HANDLED;
+  });
 
   // -------------------------------------------------------------- reference
 
-  router.get('/api/packages', () => ({ packages: app.memberships.packages() }));
-
-  router.get('/api/vacancies/:id', (ctx) => {
-    const vacancy = app.store.getVacancy(ctx.params.id ?? '');
-    if (vacancy === null || vacancy.status === 'draft') throw AppError.notFound('Vacancy not found.');
-    const employer = app.store.getEmployer(vacancy.employerId);
-    const stats = app.store.vacancyStats(vacancy.id);
-    return {
-      vacancy,
-      salaryLine: formatSalaryLine(vacancy.salary),
-      employerName: employer?.name ?? null,
-      remainingPositions: stats?.remainingPositions ?? vacancy.positions,
-      postedThrough: 'Soko Huru',
-    };
+  router.get('/api/plans', () => {
+    const context = platform.tenantContext(platform.defaultTenant.id);
+    return { tenant: context.tenant.name, plans: context.memberships.plans() };
   });
 
-  // ------------------------------------------------------------- applicants
+  router.get('/api/jobs/:jobId', (ctx) => {
+    const context = platform.tenantContext(platform.defaultTenant.id);
+    return context.swipe.jobDetail(ctx.params.jobId ?? '');
+  });
 
-  router.post('/api/applicants/:id/session', (ctx) => {
-    requireAgency(ctx);
-    return app.access.startApplicantSession(ctx.params.id ?? '');
+  // ------------------------------------------------------- applicant access
+
+  /** Applicants register with the agency, so registration issues the app token. */
+  router.post('/api/applicants/register', (ctx) => {
+    const context = platform.tenantContext(platform.defaultTenant.id);
+    const profile = context.applicants.register({
+      fullName: str(ctx.body, 'fullName'),
+      phone: str(ctx.body, 'phone'),
+      email: optStr(ctx.body, 'email'),
+      location: str(ctx.body, 'location'),
+      educationLevel: (optStr(ctx.body, 'educationLevel') ?? 'none') as EducationLevel,
+      experienceYears: optNum(ctx.body, 'experienceYears') ?? 0,
+      skills: strArray(ctx.body, 'skills'),
+      languages: strArray(ctx.body, 'languages'),
+      willingToRelocate: optBool(ctx.body, 'willingToRelocate') ?? false,
+      photoPath: optStr(ctx.body, 'photoPath'),
+      categories: strArray(ctx.body, 'categories') as JobCategory[],
+      preferredLocations: strArray(ctx.body, 'preferredLocations'),
+      minSalaryTzs: optNum(ctx.body, 'minSalaryTzs'),
+      certificateRequired: optBool(ctx.body, 'certificateRequired'),
+    });
+    const session = context.access.startApplicantSession(profile.applicant.id);
+    return { ...profile, session };
+  });
+
+  router.post('/api/applicants/login', (ctx) => {
+    const context = platform.tenantContext(platform.defaultTenant.id);
+    const applicant = context.store.getApplicantByPhone(str(ctx.body, 'phone'));
+    if (applicant === null) throw AppError.unauthorised('No account with that phone number.');
+    return { session: context.access.startApplicantSession(applicant.id), applicantId: applicant.id };
   });
 
   router.get('/api/applicants/:id', (ctx) => {
-    const applicantId = requireApplicant(ctx);
-    const applicant = app.store.getApplicant(applicantId);
-    if (applicant === null) throw AppError.notFound('Applicant not found.');
+    const { context, applicantId } = requireApplicant(ctx);
     return {
-      applicant,
-      cvs: app.store.listCvs(applicantId),
-      preferences: app.store.getPreferences(applicantId),
-      membership: app.memberships.view(applicantId),
+      ...context.applicants.profile(applicantId),
+      membership: context.memberships.view(applicantId),
     };
   });
 
-  router.post('/api/applicants/:id/cvs', (ctx) => {
-    const applicantId = requireApplicant(ctx);
-    return app.store.addCv({
-      applicantId,
-      label: str(ctx.body, 'label'),
-      categories: strArray(ctx.body, 'categories') as JobCategory[],
-      headline: optStr(ctx.body, 'headline'),
-      experienceYears: optNum(ctx.body, 'experienceYears') ?? 0,
-      educationLevel: (optStr(ctx.body, 'educationLevel') ?? 'none') as EducationLevel,
-      skills: strArray(ctx.body, 'skills'),
-      languages: strArray(ctx.body, 'languages'),
-      certificates: strArray(ctx.body, 'certificates'),
-      preferredSalaryTzs: optNum(ctx.body, 'preferredSalaryTzs'),
-      filePath: optStr(ctx.body, 'filePath'),
-      isDefault: optBool(ctx.body, 'isDefault') ?? false,
+  router.patch('/api/applicants/:id', (ctx) => {
+    const { context, applicantId } = requireApplicant(ctx);
+    return context.applicants.updateProfile(applicantId, {
+      fullName: optStr(ctx.body, 'fullName') ?? undefined,
+      email: optStr(ctx.body, 'email'),
+      location: optStr(ctx.body, 'location') ?? undefined,
+      educationLevel: (optStr(ctx.body, 'educationLevel') ?? undefined) as EducationLevel | undefined,
+      experienceYears: optNum(ctx.body, 'experienceYears') ?? undefined,
+      skills: ctx.body.skills === undefined ? undefined : strArray(ctx.body, 'skills'),
+      languages: ctx.body.languages === undefined ? undefined : strArray(ctx.body, 'languages'),
+      willingToRelocate: optBool(ctx.body, 'willingToRelocate') ?? undefined,
+      photoPath: optStr(ctx.body, 'photoPath'),
     });
   });
 
   router.put('/api/applicants/:id/preferences', (ctx) => {
-    const applicantId = requireApplicant(ctx);
-    return app.store.savePreferences({
-      applicantId,
-      locations: strArray(ctx.body, 'locations'),
+    const { context, applicantId } = requireApplicant(ctx);
+    return context.applicants.savePreferences(applicantId, {
       categories: strArray(ctx.body, 'categories') as JobCategory[],
+      locations: strArray(ctx.body, 'locations'),
       minSalaryTzs: optNum(ctx.body, 'minSalaryTzs'),
-      maxSalaryTzs: optNum(ctx.body, 'maxSalaryTzs'),
       certificateRequired: optBool(ctx.body, 'certificateRequired'),
-      educationLevelMax: optStr(ctx.body, 'educationLevelMax') as EducationLevel | null,
-      experienceYearsMax: optNum(ctx.body, 'experienceYearsMax'),
-      accommodationRequiredOutsideHome: optBool(ctx.body, 'accommodationRequiredOutsideHome') ?? false,
-      employmentTypes: strArray(ctx.body, 'employmentTypes') as EmploymentType[],
-      workModes: strArray(ctx.body, 'workModes') as WorkMode[],
-      willingToRelocate: optBool(ctx.body, 'willingToRelocate') ?? false,
-      genderNeutralOnly: optBool(ctx.body, 'genderNeutralOnly') ?? false,
-      immediateStartOnly: optBool(ctx.body, 'immediateStartOnly') ?? false,
     });
   });
 
-  router.post('/api/applicants/:id/memberships', (ctx) => {
-    const applicantId = requireApplicant(ctx);
-    return app.memberships.purchase(applicantId, str(ctx.body, 'packageCode'));
+  router.get('/api/applicants/:id/cv', (ctx) => {
+    const { context, applicantId } = requireApplicant(ctx);
+    return { cv: context.applicants.cv(applicantId), text: context.applicants.cvText(applicantId) };
   });
 
-  router.get('/api/applicants/:id/membership', (ctx) => app.memberships.view(requireApplicant(ctx)));
+  router.post('/api/applicants/:id/certificates', (ctx) => {
+    const { context, applicantId } = requireApplicant(ctx);
+    const stored = platform.uploads.save(str(ctx.body, 'filename'), str(ctx.body, 'fileBase64'));
+    return context.applicants.addCertificate(applicantId, {
+      label: optStr(ctx.body, 'label') ?? 'Certificate',
+      filePath: stored.path,
+    });
+  });
+
+  router.post('/api/applicants/:id/photo', (ctx) => {
+    const { context, applicantId } = requireApplicant(ctx);
+    const stored = platform.uploads.save(str(ctx.body, 'filename'), str(ctx.body, 'fileBase64'));
+    return context.applicants.updateProfile(applicantId, { photoPath: stored.path });
+  });
+
+  // ------------------------------------------------------ membership & pay
+
+  router.post('/api/applicants/:id/payments', (ctx) => {
+    const { context, applicantId } = requireApplicant(ctx);
+    return context.memberships.submitPayment({
+      applicantId,
+      planCode: str(ctx.body, 'planCode'),
+      amountTzs: optNum(ctx.body, 'amountTzs') ?? 0,
+      reference: str(ctx.body, 'reference'),
+      method: optStr(ctx.body, 'method') ?? 'mobile_money',
+    });
+  });
+
+  router.get('/api/applicants/:id/membership', (ctx) => {
+    const { context, applicantId } = requireApplicant(ctx);
+    return context.memberships.view(applicantId);
+  });
+
+  // ------------------------------------------------------------------ feed
 
   router.get('/api/applicants/:id/feed', (ctx) => {
-    const applicantId = requireApplicant(ctx);
+    const { context, applicantId } = requireApplicant(ctx);
     const limit = Number(ctx.query.get('limit') ?? 20);
-    return { cards: app.swipe.feed(applicantId, Number.isFinite(limit) ? limit : 20) };
+    return { cards: context.swipe.feed(applicantId, Number.isFinite(limit) ? limit : 20) };
+  });
+
+  router.get('/api/applicants/:id/jobs/:jobId', (ctx) => {
+    const { context, applicantId } = requireApplicant(ctx);
+    return context.swipe.jobDetail(ctx.params.jobId ?? '', applicantId);
   });
 
   router.post('/api/applicants/:id/swipes', (ctx) => {
-    const applicantId = requireApplicant(ctx);
+    const { context, applicantId } = requireApplicant(ctx);
     const direction = str(ctx.body, 'direction');
     if (direction !== 'left' && direction !== 'right' && direction !== 'up') {
       throw AppError.badRequest('invalid_direction', '"direction" must be left, right or up.');
     }
-    return app.swipe.swipe(applicantId, str(ctx.body, 'vacancyId'), direction as SwipeDirection);
+    return context.swipe.swipe(
+      applicantId,
+      str(ctx.body, 'jobId'),
+      direction as SwipeDirection,
+      optBool(ctx.body, 'confirmed') ?? false,
+    );
   });
 
-  router.get('/api/applicants/:id/saved', (ctx) => ({ cards: app.swipe.savedJobs(requireApplicant(ctx)) }));
+  router.get('/api/applicants/:id/saved', (ctx) => {
+    const { context, applicantId } = requireApplicant(ctx);
+    return { cards: context.swipe.savedJobs(applicantId) };
+  });
 
-  router.get('/api/applicants/:id/applications', (ctx) => ({
-    applications: app.swipe.tracker(requireApplicant(ctx)),
-  }));
+  router.get('/api/applicants/:id/applications', (ctx) => {
+    const { context, applicantId } = requireApplicant(ctx);
+    return { applications: context.swipe.tracker(applicantId) };
+  });
 
-  router.get('/api/applicants/:id/stream', (ctx) => stream(ctx, 'applicant', requireApplicant(ctx)));
+  router.get('/api/applicants/:id/stream', (ctx) => {
+    const { context, applicantId } = requireApplicant(ctx);
+    return stream(ctx, context, 'applicant', applicantId);
+  });
 
-  // ---------------------------------------------------------------- employer
+  // --------------------------------------------------------------- employer
 
-  router.post('/api/employer/login', (ctx) => {
-    const slug = str(ctx.body, 'slug');
-    const employer = app.store.getEmployerBySlug(slug);
-    const kindValue = optStr(ctx.body, 'kind') ?? 'one_time_code';
-    if (kindValue !== 'password' && kindValue !== 'one_time_code' && kindValue !== 'email_otp' && kindValue !== 'phone_otp') {
+  /** Public: what the /e/<code> page shows before the client signs in. */
+  router.get('/api/e/:code', (ctx) => {
+    const employer = platform.store.findEmployerByAccessCode(ctx.params.code ?? '');
+    if (employer === null) throw AppError.notFound('That link is not valid.');
+    const context = platform.tenantContext(employer.tenantId);
+    return {
+      name: employer.name,
+      agency: context.tenant.name,
+      hasEmail: employer.contactEmail !== null,
+      hasPhone: employer.contactPhone !== null,
+    };
+  });
+
+  router.post('/api/e/:code/otp', (ctx) => {
+    const employer = platform.store.findEmployerByAccessCode(ctx.params.code ?? '');
+    if (employer === null) throw AppError.notFound('That link is not valid.');
+    const context = platform.tenantContext(employer.tenantId);
+    const channel = optStr(ctx.body, 'channel') ?? 'phone';
+    const kind = channel === 'email' ? 'email_otp' : 'phone_otp';
+    const issued = context.access.issueOtp(employer, kind);
+
+    // No SMS gateway in the MVP: the code lands on the agency console and
+    // staff pass it on. The response never carries the code itself.
+    context.bus.publish('agency', AGENCY_SCOPE_ID, 'employer_otp_requested', {
+      employerId: employer.id,
+      employerName: employer.name,
+      kind,
+      destination: issued.destination,
+      code: issued.secret,
+      expiresAt: issued.expiresAt,
+    });
+    const destination = issued.destination ?? '';
+    return {
+      sent: true,
+      kind,
+      maskedDestination: destination.replace(/.(?=.{3})/g, '*'),
+      note: 'The agency will pass the code to you.',
+    };
+  });
+
+  router.post('/api/e/:code/login', (ctx) => {
+    const employer = platform.store.findEmployerByAccessCode(ctx.params.code ?? '');
+    if (employer === null) {
+      // Same message either way, so the link cannot be used to probe for clients.
+      throw AppError.unauthorised('That code is not valid. Ask the agency to send you a new one.');
+    }
+    const context = platform.tenantContext(employer.tenantId);
+    const kindValue = optStr(ctx.body, 'kind') ?? 'access_code';
+    if (kindValue !== 'access_code' && kindValue !== 'email_otp' && kindValue !== 'phone_otp') {
       throw AppError.badRequest('invalid_kind', 'Unknown access type.');
     }
-    if (employer === null) {
-      // Same message either way so the portal cannot be used to probe for clients.
-      throw AppError.unauthorised('That access code is not valid. Ask Soko Huru to resend your link.');
-    }
-    const session = app.access.authenticate(employer, kindValue, str(ctx.body, 'secret'));
-    return { ...session, employer, portalUrl: app.store.getPortalUrl(employer.id) };
+    const session = context.access.authenticateEmployer(employer, kindValue, str(ctx.body, 'secret'));
+    return { ...session, employer: { id: employer.id, name: employer.name } };
   });
 
   router.post('/api/employer/logout', (ctx) => {
     const token = bearer(ctx);
-    if (token !== null) app.access.logout(token);
+    if (token !== null) platform.sessionContext(token)?.context.access.logout(token);
     return { ok: true };
   });
 
-  router.get('/api/employer/dashboard', (ctx) => app.employer.dashboard(requireEmployer(ctx).id));
+  router.get('/api/employer/dashboard', (ctx) => {
+    const { context, employerId } = requireEmployer(ctx);
+    return context.employer.dashboard(employerId);
+  });
 
-  router.get('/api/employer/applications', (ctx) => {
-    const employer = requireEmployer(ctx);
+  router.get('/api/employer/candidates', (ctx) => {
+    const { context, employerId } = requireEmployer(ctx);
     const statusParam = ctx.query.get('status');
     return {
-      applications: app.employer.applications(employer.id, {
-        vacancyId: ctx.query.get('vacancyId') ?? undefined,
+      candidates: context.employer.candidates(employerId, {
+        jobId: ctx.query.get('jobId') ?? undefined,
         status: statusParam === null ? undefined : statusFrom(statusParam),
         location: ctx.query.get('location') ?? undefined,
-        minExperienceYears: ctx.query.has('minExperienceYears')
-          ? Number(ctx.query.get('minExperienceYears'))
-          : undefined,
-        education: (ctx.query.get('education') as EducationLevel | null) ?? undefined,
-        language: ctx.query.get('language') ?? undefined,
-        availableNow: ctx.query.get('availableNow') === 'true' ? true : undefined,
         search: ctx.query.get('search') ?? undefined,
         limit: ctx.query.has('limit') ? Number(ctx.query.get('limit')) : undefined,
-        offset: ctx.query.has('offset') ? Number(ctx.query.get('offset')) : undefined,
       }),
     };
   });
 
-  router.get('/api/employer/applications/:applicationId', (ctx) => {
-    const employer = requireEmployer(ctx);
-    return app.employer.openApplication(employer.id, ctx.params.applicationId ?? '', {
+  router.get('/api/employer/candidates/:applicationId', (ctx) => {
+    const { context, employerId } = requireEmployer(ctx);
+    return context.employer.openCandidate(employerId, ctx.params.applicationId ?? '', {
       kind: 'employer',
-      id: employer.id,
+      id: employerId,
     });
   });
 
-  router.post('/api/employer/applications/:applicationId/status', (ctx) => {
-    const employer = requireEmployer(ctx);
-    const status = statusFrom(ctx.body.status);
-    const actor: Actor = { kind: 'employer', id: employer.id };
-    const applicationId = ctx.params.applicationId ?? '';
-    const note = optStr(ctx.body, 'note');
-    if (status === 'interview_invited') {
-      return app.employer.inviteToInterview(employer.id, applicationId, optStr(ctx.body, 'interviewAt'), actor, note);
-    }
-    return app.employer.transition(employer.id, applicationId, status, actor, note);
+  router.post('/api/employer/candidates/:applicationId/status', (ctx) => {
+    const { context, employerId } = requireEmployer(ctx);
+    return context.employer.transition(
+      employerId,
+      ctx.params.applicationId ?? '',
+      statusFrom(ctx.body.status),
+      { kind: 'employer', id: employerId },
+      optStr(ctx.body, 'note'),
+    );
   });
 
-  router.post('/api/employer/applications/:applicationId/notes', (ctx) => {
-    const employer = requireEmployer(ctx);
-    return app.employer.addNote(employer.id, ctx.params.applicationId ?? '', str(ctx.body, 'note'));
+  router.post('/api/employer/candidates/:applicationId/notes', (ctx) => {
+    const { context, employerId } = requireEmployer(ctx);
+    return context.employer.addNote(employerId, ctx.params.applicationId ?? '', str(ctx.body, 'note'));
   });
 
-  router.post('/api/employer/vacancies/:vacancyId/close', (ctx) => {
-    const employer = requireEmployer(ctx);
-    return app.employer.closeVacancy(employer.id, ctx.params.vacancyId ?? '', { kind: 'employer', id: employer.id });
+  router.post('/api/employer/jobs/:jobId/close', (ctx) => {
+    const { context, employerId } = requireEmployer(ctx);
+    return context.employer.closeJob(employerId, ctx.params.jobId ?? '', { kind: 'employer', id: employerId });
   });
 
-  router.post('/api/employer/vacancies/:vacancyId/request-more', (ctx) => {
-    const employer = requireEmployer(ctx);
-    app.employer.requestMoreCandidates(employer.id, ctx.params.vacancyId ?? '', optStr(ctx.body, 'message'));
-    return { ok: true };
+  router.get('/api/employer/stream', (ctx) => {
+    const { context, employerId } = requireEmployer(ctx);
+    return stream(ctx, context, 'employer', employerId);
   });
 
-  router.get('/api/employer/stream', (ctx) => stream(ctx, 'employer', requireEmployer(ctx).id));
+  // ----------------------------------------------------------------- agency
 
-  /** Public lookup so the portal page can show the client's name before sign-in. */
-  router.get('/api/client/:slug', (ctx) => {
-    const employer = app.store.getEmployerBySlug(ctx.params.slug ?? '');
-    if (employer === null) throw AppError.notFound('Client portal not found.');
-    return { name: employer.name, slug: employer.slug };
+  router.post('/api/agency/uploads/image', (ctx) => {
+    requireAgency(ctx);
+    return platform.uploads.save(str(ctx.body, 'filename'), str(ctx.body, 'fileBase64'));
   });
 
-  // ------------------------------------------------------------------ agency
-
-  router.post('/api/agency/uploads', async (ctx) => {
-    const actor = requireAgency(ctx);
-    const channelValue = optStr(ctx.body, 'channel') ?? 'pasted_text';
-    const { draft, extraction } = await app.intake.uploadPost({
-      channel: channelValue as Parameters<typeof app.intake.uploadPost>[0]['channel'],
+  router.post('/api/agency/posts', async (ctx) => {
+    const { context, actor } = requireAgency(ctx);
+    const channel = (optStr(ctx.body, 'channel') ?? 'pasted_text') as 'pasted_text';
+    const { draft } = await context.intake.uploadPost({
+      channel,
       text: str(ctx.body, 'text'),
       imagePath: optStr(ctx.body, 'imagePath'),
       employerId: optStr(ctx.body, 'employerId'),
       employerName: optStr(ctx.body, 'employerName'),
       staffId: actor.id,
     });
-    return { draft, extraction };
+    return { draft, extraction: draft.extraction };
   });
 
   router.get('/api/agency/drafts', (ctx) => {
-    requireAgency(ctx);
+    const { context } = requireAgency(ctx);
     const status = ctx.query.get('status');
-    return { drafts: app.agency.drafts((status as 'extracted' | null) ?? undefined) };
+    return { drafts: context.agency.drafts((status as 'extracted' | null) ?? undefined) };
   });
 
   router.get('/api/agency/drafts/:draftId', (ctx) => {
-    requireAgency(ctx);
-    const draft = app.store.getDraft(ctx.params.draftId ?? '');
+    const { context } = requireAgency(ctx);
+    const draft = context.store.getDraft(ctx.params.draftId ?? '');
     if (draft === null) throw AppError.notFound('Draft not found.');
     return draft;
   });
 
   router.patch('/api/agency/drafts/:draftId', (ctx) => {
-    requireAgency(ctx);
+    const { context } = requireAgency(ctx);
     const corrections = ctx.body.corrections;
     if (typeof corrections !== 'object' || corrections === null) {
-      throw AppError.badRequest('missing_field', '"corrections" must be an object of vacancy fields.');
+      throw AppError.badRequest('missing_field', '"corrections" must be an object of job fields.');
     }
-    return app.intake.saveCorrections(
+    return context.intake.saveCorrections(
       ctx.params.draftId ?? '',
       corrections as Record<string, unknown>,
       optStr(ctx.body, 'employerId'),
@@ -390,133 +464,105 @@ export function createRouter(app: Kobeos): Router {
   });
 
   router.post('/api/agency/drafts/:draftId/publish', (ctx) => {
-    const actor = requireAgency(ctx);
-    return app.intake.publishDraft(ctx.params.draftId ?? '', {
+    const { context, actor } = requireAgency(ctx);
+    return context.intake.publishDraft(ctx.params.draftId ?? '', {
       staffId: actor.id,
       employerId: optStr(ctx.body, 'employerId'),
       employerName: optStr(ctx.body, 'employerName'),
-      employerLocation: optStr(ctx.body, 'employerLocation'),
-      employerContactEmail: optStr(ctx.body, 'employerContactEmail'),
-      employerContactPhone: optStr(ctx.body, 'employerContactPhone'),
-      description: optStr(ctx.body, 'description'),
+      contactName: optStr(ctx.body, 'contactName'),
+      contactPhone: optStr(ctx.body, 'contactPhone'),
+      contactEmail: optStr(ctx.body, 'contactEmail'),
     });
   });
 
   router.get('/api/agency/overview', (ctx) => {
-    requireAgency(ctx);
-    return { rows: app.agency.overview() };
+    const { context } = requireAgency(ctx);
+    return { summary: context.agency.summary(), rows: context.agency.overview() };
   });
 
   router.get('/api/agency/clients', (ctx) => {
-    requireAgency(ctx);
-    return { clients: app.agency.clients() };
-  });
-
-  router.get('/api/agency/report', (ctx) => {
-    requireAgency(ctx);
-    return { report: app.agency.report(), categories: app.agency.categoryBreakdown() };
+    const { context } = requireAgency(ctx);
+    return { clients: context.agency.clients() };
   });
 
   router.post('/api/agency/clients/:employerId/access', (ctx) => {
-    requireAgency(ctx);
-    const kind = optStr(ctx.body, 'kind') ?? 'one_time_code';
-    if (kind !== 'one_time_code' && kind !== 'email_otp' && kind !== 'phone_otp') {
-      throw AppError.badRequest('invalid_kind', 'Access can be resent as a one-time code or an OTP.');
-    }
-    return app.agency.resendAccess(ctx.params.employerId ?? '', kind, optStr(ctx.body, 'destination') ?? undefined);
-  });
-
-  router.post('/api/agency/clients/:employerId/password', (ctx) => {
-    requireAgency(ctx);
-    app.agency.setEmployerPassword(ctx.params.employerId ?? '', str(ctx.body, 'password'));
-    return { ok: true };
-  });
-
-  router.post('/api/agency/applicants', (ctx) => {
-    requireAgency(ctx);
-    return app.agency.registerApplicant({
-      fullName: str(ctx.body, 'fullName'),
-      phone: str(ctx.body, 'phone'),
-      email: optStr(ctx.body, 'email'),
-      location: str(ctx.body, 'location'),
-      gender: (optStr(ctx.body, 'gender') ?? 'undisclosed') as 'female' | 'male' | 'other' | 'undisclosed',
-      dateOfBirth: optStr(ctx.body, 'dateOfBirth'),
-      educationLevel: (optStr(ctx.body, 'educationLevel') ?? 'none') as EducationLevel,
-      languages: strArray(ctx.body, 'languages'),
-      willingToRelocate: optBool(ctx.body, 'willingToRelocate') ?? false,
-      availableFrom: optStr(ctx.body, 'availableFrom'),
-      verified: optBool(ctx.body, 'verified') ?? true,
-    });
+    const { context } = requireAgency(ctx);
+    return context.agency.resendAccess(ctx.params.employerId ?? '');
   });
 
   router.get('/api/agency/applicants', (ctx) => {
-    requireAgency(ctx);
-    return { applicants: app.agency.applicants() };
+    const { context } = requireAgency(ctx);
+    return { applicants: context.agency.applicants() };
   });
 
-  router.post('/api/agency/memberships/:membershipId/confirm', (ctx) => {
-    requireAgency(ctx);
-    return app.memberships.confirmPayment(
-      ctx.params.membershipId ?? '',
-      optNum(ctx.body, 'paidAmountTzs') ?? 0,
-      str(ctx.body, 'paymentReference'),
+  router.get('/api/agency/payments', (ctx) => {
+    const { context } = requireAgency(ctx);
+    return { payments: context.agency.pendingPayments() };
+  });
+
+  router.post('/api/agency/payments/:paymentId/confirm', (ctx) => {
+    const { context, actor } = requireAgency(ctx);
+    return context.memberships.confirmPayment(ctx.params.paymentId ?? '', actor.id);
+  });
+
+  router.post('/api/agency/payments/:paymentId/reject', (ctx) => {
+    const { context, actor } = requireAgency(ctx);
+    return context.memberships.rejectPayment(ctx.params.paymentId ?? '', actor.id, str(ctx.body, 'note'));
+  });
+
+  router.get('/api/agency/plans', (ctx) => {
+    const { context } = requireAgency(ctx);
+    return { plans: context.memberships.allPlans() };
+  });
+
+  /** The agency admin editing package names and prices. */
+  router.put('/api/agency/plans/:code', (ctx) => {
+    const { context } = requireAgency(ctx);
+    const code = ctx.params.code ?? '';
+    const existing = context.store.getPlan(code);
+    return context.memberships.savePlan({
+      code,
+      name: optStr(ctx.body, 'name') ?? existing?.name ?? code,
+      priceTzs: optNum(ctx.body, 'priceTzs') ?? existing?.priceTzs ?? 0,
+      durationDays: optNum(ctx.body, 'durationDays') ?? existing?.durationDays ?? 90,
+      coversNonCertificateJobs:
+        optBool(ctx.body, 'coversNonCertificateJobs') ?? existing?.coversNonCertificateJobs ?? true,
+      coversCertificateJobs: optBool(ctx.body, 'coversCertificateJobs') ?? existing?.coversCertificateJobs ?? false,
+      active: optBool(ctx.body, 'active') ?? existing?.active ?? true,
+    });
+  });
+
+  /** Agency staff acting for a client: same rules, recorded as the agency. */
+  router.post('/api/agency/applications/:applicationId/status', (ctx) => {
+    const { context, actor } = requireAgency(ctx);
+    const application = context.store.getApplication(ctx.params.applicationId ?? '');
+    if (application === null) throw AppError.notFound('Application not found.');
+    return context.employer.transition(
+      application.employerId,
+      application.id,
+      statusFrom(ctx.body.status),
+      actor,
+      optStr(ctx.body, 'note'),
     );
   });
 
-  router.post('/api/agency/memberships', (ctx) => {
-    requireAgency(ctx);
-    return app.memberships.purchase(str(ctx.body, 'applicantId'), str(ctx.body, 'packageCode'));
-  });
-
-  router.get('/api/agency/renewals', (ctx) => {
-    requireAgency(ctx);
-    const days = Number(ctx.query.get('withinDays') ?? 7);
-    return { renewals: app.memberships.renewalsDue(Number.isFinite(days) ? days : 7) };
-  });
-
-  /** Soko Huru shortlisting or rejecting on an employer's behalf. */
-  router.post('/api/agency/applications/:applicationId/status', (ctx) => {
-    const actor = requireAgency(ctx);
-    const application = app.store.getApplication(ctx.params.applicationId ?? '');
-    if (application === null) throw AppError.notFound('Application not found.');
-    const status = statusFrom(ctx.body.status);
-    const note = optStr(ctx.body, 'note');
-    if (status === 'interview_invited') {
-      return app.employer.inviteToInterview(
-        application.employerId,
-        application.id,
-        optStr(ctx.body, 'interviewAt'),
-        actor,
-        note,
-      );
-    }
-    return app.employer.transition(application.employerId, application.id, status, actor, note);
-  });
-
   router.get('/api/agency/applications/:applicationId', (ctx) => {
-    requireAgency(ctx);
-    const application = app.store.getApplication(ctx.params.applicationId ?? '');
+    const { context } = requireAgency(ctx);
+    const application = context.store.getApplication(ctx.params.applicationId ?? '');
     if (application === null) throw AppError.notFound('Application not found.');
-    const applicant = app.store.getApplicant(application.applicantId);
-    const vacancy = app.store.getVacancy(application.vacancyId);
-    const cv = app.store.getCv(application.cvId);
     return {
       application,
       statusLabel: STATUS_LABELS[application.status],
-      applicant,
-      cv,
-      vacancy,
-      history: app.store.listApplicationEvents(application.id),
-      card:
-        vacancy !== null && applicant !== null && cv !== null
-          ? buildJobCard(vacancy, scoreMatch(vacancy, applicant, cv))
-          : null,
+      applicant: context.store.getApplicant(application.applicantId),
+      cv: context.store.getCv(application.cvId),
+      job: context.store.getJob(application.jobId),
+      history: context.store.listStatusHistory(application.id),
     };
   });
 
   router.get('/api/agency/stream', (ctx) => {
-    requireAgency(ctx);
-    return stream(ctx, 'agency', AGENCY_SCOPE_ID);
+    const { context } = requireAgency(ctx);
+    return stream(ctx, context, 'agency', AGENCY_SCOPE_ID);
   });
 
   return router;

@@ -3,48 +3,53 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Recruitment page - powered by KobeOS</title>
+<title>Recruitment page</title>
 <style>
-  :root { --ink:#10211a; --muted:#5b6f66; --line:#d8e4dd; --bg:#f4f8f5; --green:#0f7a4f; --amber:#a86a10; --red:#b3372b; }
+  :root { --ink:#10211a; --muted:#5b6f66; --line:#dde7e2; --bg:#f2f7f4; --green:#0f7a4f; --red:#c0392b; }
   * { box-sizing:border-box; }
   body { margin:0; font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; color:var(--ink); background:var(--bg); }
   header { background:#0d3b2a; color:#fff; padding:20px 24px; }
-  header h1 { margin:0; font-size:20px; }
+  header h1 { margin:0; font-size:21px; }
   header p { margin:4px 0 0; opacity:.85; font-size:13px; }
-  main { max-width:1120px; margin:0 auto; padding:24px 20px 64px; display:grid; gap:20px; }
+  main { max-width:1080px; margin:0 auto; padding:22px 20px 64px; display:grid; gap:18px; }
   .panel { background:#fff; border:1px solid var(--line); border-radius:12px; padding:18px; }
-  .panel h2 { margin:0 0 12px; font-size:16px; }
-  .signin { max-width:380px; margin:48px auto; }
-  label { display:block; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:10px 0 4px; }
-  input, select { width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:8px; font:inherit; font-size:14px; background:#fff; }
+  .panel h2 { margin:0 0 12px; font-size:16px; display:flex; justify-content:space-between; align-items:center; gap:10px; }
+  .signin { max-width:400px; margin:56px auto; }
+  label { display:block; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:10px 0 4px; }
+  input, select { width:100%; padding:10px; border:1px solid var(--line); border-radius:8px; font:inherit; font-size:15px; background:#fff; }
   button { font:inherit; font-weight:600; cursor:pointer; border-radius:8px; border:1px solid transparent; padding:8px 13px; font-size:14px; }
   .primary { background:var(--green); color:#fff; }
   .ghost { background:#fff; border-color:var(--line); }
   .danger { background:#fff; border-color:#f0c2bc; color:var(--red); }
-  .tiles { display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); }
-  .tile { background:#fff; border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
-  .tile b { display:block; font-size:24px; font-variant-numeric:tabular-nums; }
-  .tile span { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
-  .filters { display:grid; gap:10px; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); align-items:end; }
-  .applicant { border:1px solid var(--line); border-radius:10px; padding:14px; margin-bottom:12px; background:#fff; }
-  .applicant h3 { margin:0 0 2px; font-size:17px; }
-  .applicant .meta { color:var(--muted); font-size:13px; margin:0 0 10px; }
-  .facts { display:grid; gap:4px 16px; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); font-size:14px; margin-bottom:10px; }
+  .link { background:none; border:0; color:var(--green); padding:0; }
+  .tiles { display:grid; gap:10px; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); }
+  .tile { border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
+  .tile b { display:block; font-size:26px; font-variant-numeric:tabular-nums; }
+  .tile span { font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  .job { border-top:1px solid var(--line); padding:12px 0; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:center; }
+  .job h3 { margin:0; font-size:16px; }
+  .job small { color:var(--muted); }
+  .filters { display:grid; gap:10px; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); align-items:end; }
+  .candidate { border:1px solid var(--line); border-radius:10px; padding:15px; margin-bottom:12px; }
+  .candidate h3 { margin:0 0 2px; font-size:17px; }
+  .candidate .meta { color:var(--muted); font-size:13px; margin:0 0 10px; }
+  .facts { display:grid; gap:3px 18px; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); font-size:14px; margin-bottom:10px; }
   .actions { display:flex; gap:8px; flex-wrap:wrap; }
-  .tag { font-size:12px; padding:2px 9px; border-radius:999px; background:#e7f0ea; color:var(--green); white-space:nowrap; }
-  .score { float:right; font-weight:700; color:var(--green); }
-  .notice { padding:10px 12px; border-radius:8px; font-size:14px; margin-bottom:12px; }
+  .tag { font-size:12px; font-weight:600; padding:3px 9px; border-radius:999px; background:#e7f0ea; color:var(--green); white-space:nowrap; }
+  .notice { padding:11px 13px; border-radius:8px; font-size:14px; margin-bottom:12px; }
   .ok { background:#e6f4ec; border:1px solid #b7dfc8; }
   .err { background:#fbeae8; border:1px solid #f0c2bc; }
-  .vacancy-row { display:flex; justify-content:space-between; gap:12px; padding:10px 0; border-top:1px solid var(--line); align-items:center; flex-wrap:wrap; }
-  .live { font-size:12px; color:var(--muted); }
+  .live { font-size:12px; color:var(--muted); font-weight:400; }
   .live b { color:var(--green); }
+  dialog { border:0; border-radius:14px; padding:22px; max-width:560px; width:calc(100% - 40px); }
+  dialog::backdrop { background:rgba(16,33,26,.45); }
+  dialog pre { white-space:pre-wrap; font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; margin:0; }
 </style>
 </head>
 <body>
 <header>
   <h1 id="clientName">Recruitment page</h1>
-  <p>Candidates arrive here the moment they apply through Soko Huru.</p>
+  <p id="tagline">Candidates arrive here the moment they apply.</p>
 </header>
 
 <main>
@@ -52,60 +57,57 @@
 
   <section class="panel signin" id="signin">
     <h2>Sign in</h2>
-    <p style="color:#5b6f66;font-size:13px;margin:0">Use the access code Soko Huru sent you.</p>
-    <label for="kind">Access type</label>
-    <select id="kind">
-      <option value="one_time_code">One-time access code</option>
-      <option value="password">Password</option>
-      <option value="email_otp">Email OTP</option>
-      <option value="phone_otp">Phone OTP</option>
-    </select>
-    <label for="secret">Code</label>
-    <input id="secret" type="password" autocomplete="one-time-code">
-    <button class="primary" id="signinBtn" style="width:100%;margin-top:12px">Open my recruitment page</button>
+    <p style="color:#5b6f66;font-size:13px;margin:0">Enter the access code the agency sent you.</p>
+    <label for="secret">Access code</label>
+    <input id="secret" inputmode="numeric" autocomplete="one-time-code">
+    <button class="primary" id="signinBtn" style="width:100%;margin-top:12px">Open my page</button>
+    <p style="text-align:center;margin:14px 0 0;font-size:14px">
+      <button class="link" id="otpPhone">Send a code to my phone</button> ·
+      <button class="link" id="otpEmail">to my email</button>
+    </p>
   </section>
 
   <div id="portal" hidden>
     <section class="panel">
       <h2>Positions <span class="live" id="live"></span></h2>
       <div class="tiles" id="tiles"></div>
-      <div id="vacancies"></div>
+      <div id="jobs"></div>
     </section>
 
     <section class="panel">
       <h2>Applicants</h2>
       <div class="filters">
-        <div><label for="fVacancy">Vacancy</label><select id="fVacancy"><option value="">All</option></select></div>
+        <div><label for="fJob">Job</label><select id="fJob"><option value="">All</option></select></div>
         <div><label for="fStatus">Status</label><select id="fStatus">
           <option value="">All</option><option value="applied">New</option><option value="viewed">Viewed</option>
-          <option value="shortlisted">Shortlisted</option><option value="interview_invited">Interview invited</option>
-          <option value="interview_completed">Interview completed</option><option value="hired">Hired</option>
-          <option value="rejected">Rejected</option></select></div>
+          <option value="shortlisted">Shortlisted</option><option value="interview">Interview</option>
+          <option value="hired">Hired</option><option value="rejected">Rejected</option></select></div>
         <div><label for="fLocation">Location</label><input id="fLocation" placeholder="Dar es Salaam"></div>
-        <div><label for="fExperience">Min experience</label><input id="fExperience" type="number" min="0" placeholder="2"></div>
-        <div><label for="fLanguage">Language</label><input id="fLanguage" placeholder="English"></div>
         <div><label for="fSearch">Search</label><input id="fSearch" placeholder="name, skill or reference"></div>
         <div><button class="ghost" id="applyFilters" style="width:100%">Filter</button></div>
       </div>
-      <div id="applicants" style="margin-top:16px"></div>
+      <div id="candidates" style="margin-top:16px"></div>
     </section>
   </div>
 </main>
 
+<dialog id="cvDialog"><h3 id="cvName"></h3><pre id="cvText"></pre>
+  <div style="margin-top:18px;display:flex;gap:10px">
+    <button class="ghost" id="cvClose" style="flex:1">Close</button>
+    <button class="primary" id="cvDownload" style="flex:1">Download</button>
+  </div>
+</dialog>
+
 <script>
 const $ = (id) => document.getElementById(id);
-const slug = location.pathname.split('/')[2] || '';
-const jobSlug = location.pathname.split('/')[4] || '';
-let token = sessionStorage.getItem(`kobeos_employer_${slug}`) || '';
-let dashboard = null;
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+const code = location.pathname.split('/')[2] || '';
+let token = sessionStorage.getItem(`kobeos_employer_${code}`) || '';
+let openCv = null;
 
-function escape(value) {
-  return String(value ?? '').replace(/[&<>"']/g, (ch) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
-}
 function notice(kind, text) {
   $('status').innerHTML = `<div class="notice ${kind}">${text}</div>`;
-  setTimeout(() => { if ($('status').textContent.includes(text.replace(/<[^>]+>/g, '').slice(0, 20))) $('status').innerHTML = ''; }, 6000);
+  setTimeout(() => { $('status').innerHTML = ''; }, 6000);
 }
 
 async function api(path, options = {}) {
@@ -118,169 +120,158 @@ async function api(path, options = {}) {
   return data;
 }
 
-async function loadClientName() {
+async function loadHeader() {
   try {
-    const client = await fetch(`/api/client/${encodeURIComponent(slug)}`).then((r) => r.json());
-    if (client.name) $('clientName').textContent = `${client.name} - recruitment page`;
-  } catch { /* portal shows its generic title */ }
+    const client = await fetch(`/api/e/${encodeURIComponent(code)}`).then((r) => r.json());
+    if (client.name) {
+      $('clientName').textContent = client.name;
+      $('tagline').textContent = `Candidates from ${client.agency}, live as they apply.`;
+      document.title = `${client.name} - recruitment`;
+    }
+  } catch { /* keep the generic title */ }
 }
 
 function renderDashboard(data) {
-  dashboard = data;
   const t = data.totals;
   $('tiles').innerHTML = [
-    ['Positions', t.positions], ['Applications', t.applications], ['New', t.newApplications],
-    ['Shortlisted', t.shortlisted], ['Interviews', t.interviewInvited], ['Hired', t.hired],
-    ['Remaining', t.remainingPositions],
+    ['Positions', t.positions], ['Applicants', t.applications], ['New', t.newApplications],
+    ['Viewed', t.viewed], ['Shortlisted', t.shortlisted], ['Interview', t.interview],
+    ['Hired', t.hired], ['Left to fill', t.remainingPositions],
   ].map(([label, value]) => `<div class="tile"><b>${value}</b><span>${label}</span></div>`).join('');
 
-  $('vacancies').innerHTML = data.vacancies.map((v) => `
-    <div class="vacancy-row">
-      <div><strong>${escape(v.title)}</strong> - ${escape(v.location)}<br>
-        <small style="color:#5b6f66">${v.applications} applications · ${v.newApplications} new · ${v.viewed} viewed ·
-        ${v.shortlisted} shortlisted · ${v.interviewInvited} invited · ${v.rejected} rejected ·
-        ${v.hired} hired · ${v.remainingPositions} of ${v.positions} positions left</small></div>
-      <div class="actions">
-        <button class="ghost" data-more="${escape(v.vacancyId)}">Request more candidates</button>
-        <button class="danger" data-close="${escape(v.vacancyId)}">Close vacancy</button>
-      </div>
+  $('jobs').innerHTML = data.jobs.map((job) => `
+    <div class="job">
+      <div><h3>${esc(job.title)}</h3>
+        <small>${esc(job.location)} · ${job.applications} applicants · ${job.newApplications} new ·
+          ${job.shortlisted} shortlisted · ${job.hired} hired · ${job.remainingPositions} of ${job.positions} left</small></div>
+      <button class="danger" data-close="${esc(job.jobId)}">Close job</button>
     </div>`).join('');
 
-  const select = $('fVacancy');
+  const select = $('fJob');
   const current = select.value;
   select.innerHTML = '<option value="">All</option>' +
-    data.vacancies.map((v) => `<option value="${escape(v.vacancyId)}">${escape(v.title)}</option>`).join('');
+    data.jobs.map((job) => `<option value="${esc(job.jobId)}">${esc(job.title)}</option>`).join('');
   select.value = current;
 
-  $('vacancies').querySelectorAll('button[data-close]').forEach((button) => {
+  $('jobs').querySelectorAll('[data-close]').forEach((button) => {
     button.addEventListener('click', async () => {
-      if (!confirm('Close this vacancy? Applicants will stop seeing it.')) return;
-      try { await api(`/api/employer/vacancies/${button.dataset.close}/close`, { method: 'POST' });
-        notice('ok', 'Vacancy closed.'); await refresh(); } catch (e) { notice('err', escape(e.message)); }
-    });
-  });
-  $('vacancies').querySelectorAll('button[data-more]').forEach((button) => {
-    button.addEventListener('click', async () => {
-      const message = prompt('Anything to tell Soko Huru?') || null;
-      try { await api(`/api/employer/vacancies/${button.dataset.more}/request-more`, { method: 'POST', body: JSON.stringify({ message }) });
-        notice('ok', 'Soko Huru has been asked for more candidates.'); } catch (e) { notice('err', escape(e.message)); }
+      if (!confirm('Close this job? Applicants will stop seeing it.')) return;
+      try {
+        await api(`/api/employer/jobs/${button.dataset.close}/close`, { method: 'POST', body: '{}' });
+        notice('ok', 'Job closed.');
+        await refresh();
+      } catch (error) { notice('err', esc(error.message)); }
     });
   });
 }
 
-function filterQuery() {
+const NEXT = {
+  applied: ['shortlisted', 'rejected'],
+  viewed: ['shortlisted', 'rejected'],
+  shortlisted: ['interview', 'hired', 'rejected'],
+  interview: ['hired', 'rejected'],
+  hired: [], rejected: [], withdrawn: [],
+};
+const LABEL = { shortlisted: 'Shortlist', interview: 'Interview', hired: 'Hire', rejected: 'Reject' };
+
+async function loadCandidates() {
   const params = new URLSearchParams();
-  const map = { vacancyId: 'fVacancy', status: 'fStatus', location: 'fLocation', minExperienceYears: 'fExperience',
-                language: 'fLanguage', search: 'fSearch' };
-  for (const [key, id] of Object.entries(map)) {
+  for (const [key, id] of Object.entries({ jobId: 'fJob', status: 'fStatus', location: 'fLocation', search: 'fSearch' })) {
     const value = $(id).value.trim();
     if (value) params.set(key, value);
   }
-  return params;
-}
-
-const NEXT_ACTIONS = {
-  applied: ['shortlisted', 'rejected'],
-  viewed: ['shortlisted', 'rejected'],
-  shortlisted: ['interview_invited', 'rejected'],
-  interview_invited: ['interview_completed', 'rejected'],
-  interview_completed: ['hired', 'rejected'],
-  hired: [], rejected: [], withdrawn: [],
-};
-const LABELS = { shortlisted:'Shortlist', rejected:'Reject', interview_invited:'Invite to interview',
-                 interview_completed:'Interview done', hired:'Mark hired' };
-
-async function loadApplicants() {
-  const params = filterQuery();
-  const data = await api(`/api/employer/applications?${params.toString()}`);
-  $('applicants').innerHTML = data.applications.length === 0
+  const data = await api(`/api/employer/candidates?${params.toString()}`);
+  $('candidates').innerHTML = data.candidates.length === 0
     ? '<p style="color:#5b6f66">No applicants match these filters yet.</p>'
-    : data.applications.map((entry) => {
+    : data.candidates.map((entry) => {
         const a = entry.applicant, cv = entry.cv, app = entry.application;
-        const actions = (NEXT_ACTIONS[app.status] || []).map((next) =>
-          `<button class="${next === 'rejected' ? 'danger' : 'primary'}" data-id="${escape(app.id)}" data-next="${next}">${LABELS[next]}</button>`).join('');
-        return `<div class="applicant">
-          <span class="score">${app.matchScore}%</span>
-          <h3>${escape(a.fullName)}</h3>
-          <p class="meta">${escape(a.location)} · ${escape(entry.vacancyTitle)} · ${escape(app.reference)}
-            <span class="tag">${escape(entry.statusLabel)}</span></p>
+        const actions = (NEXT[app.status] || []).map((next) =>
+          `<button class="${next === 'rejected' ? 'danger' : 'primary'}" data-id="${esc(app.id)}" data-next="${next}">${LABEL[next]}</button>`).join('');
+        return `<div class="candidate">
+          <h3>${esc(a.fullName)} <span class="tag">${esc(entry.statusLabel)}</span></h3>
+          <p class="meta">${esc(a.location)} · ${esc(entry.jobTitle)} · ${esc(app.reference)} ·
+            applied ${new Date(app.createdAt).toLocaleDateString()}</p>
           <div class="facts">
-            <div><strong>${cv.experienceYears}</strong> years experience</div>
-            <div>${escape(cv.educationLevel)}</div>
-            <div>${escape((cv.languages || []).join(', ') || '-')}</div>
-            <div>${a.willingToRelocate ? 'Willing to relocate' : 'Prefers home area'}</div>
-            <div>${a.availableFrom ? 'Available ' + escape(a.availableFrom) : 'Available immediately'}</div>
-            <div>${a.sokoHuruVerified ? 'Soko Huru verified' : 'Not yet verified'}</div>
+            <div>${cv.experienceYears} year(s) experience</div>
+            <div>${esc(cv.educationLevel)}</div>
+            <div>${esc((cv.languages || []).join(' / ') || 'Languages not stated')}</div>
+            <div>${entry.relocation ? esc(entry.relocation) : 'Lives locally'}</div>
           </div>
-          <p style="font-size:14px;margin:0 0 10px">${escape(cv.headline || '')}
-            ${(cv.certificates || []).length ? '<br><small>Certificates: ' + escape(cv.certificates.join(', ')) + '</small>' : ''}
-            ${(cv.skills || []).length ? '<br><small>Skills: ' + escape(cv.skills.join(', ')) + '</small>' : ''}</p>
+          ${cv.skills.length ? `<p style="font-size:14px;margin:0 0 10px"><small>Skills: ${esc(cv.skills.join(', '))}</small></p>` : ''}
+          ${app.employerNotes ? `<p style="font-size:13px;color:#5b6f66;margin:0 0 10px">Note: ${esc(app.employerNotes)}</p>` : ''}
           <div class="actions">
-            <button class="ghost" data-open="${escape(app.id)}">View CV</button>
-            <button class="ghost" data-note="${escape(app.id)}">Add note</button>
+            <button class="ghost" data-cv="${esc(app.id)}">View CV</button>
+            <button class="ghost" data-note="${esc(app.id)}">Add note</button>
             ${actions}
           </div>
-          ${app.employerNotes ? `<p style="font-size:13px;color:#5b6f66;margin:10px 0 0">Note: ${escape(app.employerNotes)}</p>` : ''}
         </div>`;
       }).join('');
 
-  $('applicants').querySelectorAll('button[data-next]').forEach((button) => {
+  $('candidates').querySelectorAll('[data-next]').forEach((button) => {
     button.addEventListener('click', async () => {
-      const next = button.dataset.next;
-      const body = { status: next };
-      if (next === 'interview_invited') {
-        const when = prompt('Interview date and time (e.g. 2026-08-20 10:00)');
-        if (when) body.interviewAt = new Date(when.replace(' ', 'T')).toISOString();
-      }
       try {
-        await api(`/api/employer/applications/${button.dataset.id}/status`, { method: 'POST', body: JSON.stringify(body) });
-        notice('ok', 'Candidate updated.');
+        await api(`/api/employer/candidates/${button.dataset.id}/status`, {
+          method: 'POST', body: JSON.stringify({ status: button.dataset.next }),
+        });
+        notice('ok', 'Candidate updated. They have been told.');
         await refresh();
-      } catch (error) { notice('err', escape(error.message)); }
+      } catch (error) { notice('err', esc(error.message)); }
     });
   });
 
-  $('applicants').querySelectorAll('button[data-open]').forEach((button) => {
+  $('candidates').querySelectorAll('[data-cv]').forEach((button) => {
     button.addEventListener('click', async () => {
       try {
-        const dossier = await api(`/api/employer/applications/${button.dataset.open}`);
-        const cv = dossier.cv;
-        alert([`${dossier.applicant.fullName} - ${cv.label}`, '',
-          cv.headline || '', `Experience: ${cv.experienceYears} years`,
-          `Education: ${cv.educationLevel}`, `Skills: ${(cv.skills || []).join(', ') || '-'}`,
-          `Certificates: ${(cv.certificates || []).join(', ') || '-'}`,
-          `Languages: ${(cv.languages || []).join(', ') || '-'}`,
-          `Preferred salary: ${cv.preferredSalaryTzs ? 'TSh ' + cv.preferredSalaryTzs.toLocaleString() : 'not stated'}`,
-          `Applied: ${new Date(dossier.application.createdAt).toLocaleString()}`,
-          cv.filePath ? `File: ${cv.filePath}` : ''].join('\n'));
+        const dossier = await api(`/api/employer/candidates/${button.dataset.cv}`);
+        openCv = dossier;
+        $('cvName').textContent = `${dossier.applicant.fullName} — ${dossier.jobTitle}`;
+        $('cvText').textContent = dossier.cvText;
+        $('cvDialog').showModal();
         await refresh();
-      } catch (error) { notice('err', escape(error.message)); }
+      } catch (error) { notice('err', esc(error.message)); }
     });
   });
 
-  $('applicants').querySelectorAll('button[data-note]').forEach((button) => {
+  $('candidates').querySelectorAll('[data-note]').forEach((button) => {
     button.addEventListener('click', async () => {
       const note = prompt('Internal note (only your team sees this)');
       if (!note) return;
-      try { await api(`/api/employer/applications/${button.dataset.note}/notes`, { method: 'POST', body: JSON.stringify({ note }) });
-        notice('ok', 'Note saved.'); await loadApplicants(); } catch (e) { notice('err', escape(e.message)); }
+      try {
+        await api(`/api/employer/candidates/${button.dataset.note}/notes`, { method: 'POST', body: JSON.stringify({ note }) });
+        await loadCandidates();
+      } catch (error) { notice('err', esc(error.message)); }
     });
   });
 }
 
+$('cvClose').addEventListener('click', () => $('cvDialog').close());
+$('cvDownload').addEventListener('click', () => {
+  if (!openCv) return;
+  const blob = new Blob([openCv.cvText], { type: 'text/plain' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `${openCv.applicant.fullName.replace(/\s+/g, '-')}-CV.txt`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+});
+
+$('applyFilters').addEventListener('click', () => void loadCandidates());
+
 async function refresh() {
   renderDashboard(await api('/api/employer/dashboard'));
-  await loadApplicants();
+  await loadCandidates();
 }
 
 function listen() {
   const source = new EventSource(`/api/employer/stream?token=${encodeURIComponent(token)}`);
   source.onopen = () => { $('live').innerHTML = '<b>live</b>'; };
   source.onerror = () => { $('live').textContent = 'reconnecting...'; };
-  for (const type of ['application_received', 'application_status_changed', 'vacancy_published', 'vacancy_closed']) {
+  for (const type of ['application_received', 'application_status_changed', 'job_published', 'job_closed']) {
     source.addEventListener(type, (event) => {
-      const payload = JSON.parse(event.data);
-      if (type === 'application_received') notice('ok', `New application from ${escape(payload.applicantName)} for ${escape(payload.vacancyTitle)}.`);
+      if (type === 'application_received') {
+        const payload = JSON.parse(event.data);
+        notice('ok', `New applicant: ${esc(payload.applicantName)} for ${esc(payload.jobTitle)}.`);
+      }
       void refresh();
     });
   }
@@ -290,34 +281,41 @@ async function open() {
   try {
     $('signin').hidden = true;
     $('portal').hidden = false;
-    if (jobSlug) {
-      const data = await api('/api/employer/dashboard');
-      const match = data.vacancies.find((v) => v.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') === jobSlug);
-      if (match) $('fVacancy').innerHTML = `<option value="${match.vacancyId}">${match.title}</option>`;
-    }
     await refresh();
     listen();
   } catch (error) {
     $('signin').hidden = false;
     $('portal').hidden = true;
-    notice('err', escape(error.message));
+    notice('err', esc(error.message));
   }
 }
 
 $('signinBtn').addEventListener('click', async () => {
   try {
-    const session = await fetch('/api/employer/login', {
+    const session = await fetch(`/api/e/${encodeURIComponent(code)}/login`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ slug, kind: $('kind').value, secret: $('secret').value }),
+      body: JSON.stringify({ kind: sessionStorage.getItem(`kobeos_kind_${code}`) || 'access_code', secret: $('secret').value.trim() }),
     }).then(async (r) => { const d = await r.json(); if (!r.ok) throw new Error(d?.error?.message || 'Sign in failed'); return d; });
     token = session.token;
-    sessionStorage.setItem(`kobeos_employer_${slug}`, token);
+    sessionStorage.setItem(`kobeos_employer_${code}`, token);
     $('secret').value = '';
     await open();
-  } catch (error) { notice('err', escape(error.message)); }
+  } catch (error) { notice('err', esc(error.message)); }
 });
 
-void loadClientName();
+async function requestOtp(channel) {
+  try {
+    const result = await fetch(`/api/e/${encodeURIComponent(code)}/otp`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ channel }),
+    }).then(async (r) => { const d = await r.json(); if (!r.ok) throw new Error(d?.error?.message); return d; });
+    sessionStorage.setItem(`kobeos_kind_${code}`, result.kind);
+    notice('ok', `A code is on its way to ${esc(result.maskedDestination)}. ${esc(result.note)}`);
+  } catch (error) { notice('err', esc(error.message)); }
+}
+$('otpPhone').addEventListener('click', () => requestOtp('phone'));
+$('otpEmail').addEventListener('click', () => requestOtp('email'));
+
+void loadHeader();
 if (token) void open();
 </script>
 </body>

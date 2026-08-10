@@ -3,92 +3,130 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Soko Huru control dashboard - KobeOS</title>
+<title>Agency admin - KobeOS</title>
 <style>
-  :root { --ink:#10211a; --muted:#5b6f66; --line:#d8e4dd; --bg:#f4f8f5; --green:#0f7a4f; --amber:#a86a10; --red:#b3372b; }
+  :root { --ink:#10211a; --muted:#5b6f66; --line:#dde7e2; --bg:#f2f7f4; --green:#0f7a4f; --amber:#b8860b; --red:#c0392b; }
   * { box-sizing:border-box; }
   body { margin:0; font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; color:var(--ink); background:var(--bg); }
-  header { background:var(--green); color:#fff; padding:18px 24px; display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap; }
-  header h1 { margin:0; font-size:19px; }
-  header input { padding:7px 10px; border-radius:8px; border:0; font-size:13px; min-width:200px; }
-  main { max-width:1120px; margin:0 auto; padding:24px 20px 64px; display:grid; gap:20px; }
+  header { background:var(--green); color:#fff; padding:16px 24px; display:flex; justify-content:space-between;
+           align-items:center; gap:16px; flex-wrap:wrap; }
+  header h1 { margin:0; font-size:18px; }
+  header input { padding:7px 10px; border-radius:8px; border:0; font-size:13px; min-width:190px; }
+  main { max-width:1180px; margin:0 auto; padding:22px 20px 64px; display:grid; gap:18px; }
   .panel { background:#fff; border:1px solid var(--line); border-radius:12px; padding:18px; }
   .panel h2 { margin:0 0 12px; font-size:16px; }
-  .grid2 { display:grid; gap:20px; grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
-  @media (max-width:860px) { .grid2 { grid-template-columns:1fr; } }
-  label { display:block; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:10px 0 4px; }
+  .tiles { display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); }
+  .tile { border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
+  .tile b { display:block; font-size:24px; font-variant-numeric:tabular-nums; }
+  .tile span { font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  label { display:block; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:10px 0 4px; }
   textarea, input, select { width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:8px; font:inherit; font-size:14px; background:#fff; }
-  textarea { min-height:150px; resize:vertical; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:13px; }
+  textarea { min-height:170px; resize:vertical; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:13px; }
   button { font:inherit; font-weight:600; cursor:pointer; border-radius:8px; border:1px solid transparent; padding:9px 14px; }
   .primary { background:var(--green); color:#fff; }
   .ghost { background:#fff; border-color:var(--line); }
+  .danger { background:#fff; border-color:#f0c2bc; color:var(--red); }
   table { width:100%; border-collapse:collapse; font-size:14px; }
-  th { text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); padding:6px 8px; border-bottom:1px solid var(--line); }
+  th { text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted);
+       padding:6px 8px; border-bottom:1px solid var(--line); }
   td { padding:8px; border-bottom:1px solid var(--line); }
   td.num { text-align:right; font-variant-numeric:tabular-nums; }
-  .field { display:grid; grid-template-columns:150px 1fr; gap:8px; align-items:center; padding:5px 0; border-bottom:1px solid var(--line); font-size:14px; }
-  .field span.name { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
-  .field input { padding:6px 8px; }
-  .flag { border-left:3px solid var(--amber); padding-left:8px; }
-  .log { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; max-height:240px; overflow:auto; }
+
+  /* Poster on the left, what Kobe AI read on the right. */
+  .review { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:18px; }
+  @media (max-width:900px) { .review { grid-template-columns:1fr; } }
+  .poster { border:1px solid var(--line); border-radius:10px; padding:14px; background:#fbfdfc; }
+  .poster img { width:100%; border-radius:8px; }
+  .poster pre { white-space:pre-wrap; font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; margin:10px 0 0; }
+  .field { display:grid; grid-template-columns:132px 1fr; gap:10px; align-items:center; padding:6px 0; border-bottom:1px solid var(--line); }
+  .field span.name { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.03em; }
+  .field span.name small { display:block; text-transform:none; letter-spacing:0; font-size:11px; }
+  .field input, .field textarea { padding:7px 9px; }
+  .field textarea { min-height:60px; font-family:inherit; font-size:14px; }
+  .flag { border-left:3px solid var(--amber); padding-left:9px; margin-left:-12px; }
+  .log { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; max-height:220px; overflow:auto; }
   .log div { padding:4px 0; border-bottom:1px solid var(--line); }
-  .notice { padding:10px 12px; border-radius:8px; font-size:14px; margin-bottom:12px; }
+  .notice { padding:11px 13px; border-radius:8px; font-size:14px; margin-bottom:12px; }
   .ok { background:#e6f4ec; border:1px solid #b7dfc8; }
   .err { background:#fbeae8; border:1px solid #f0c2bc; }
-  .chase { color:var(--red); font-weight:600; }
+  .grid2 { display:grid; gap:18px; grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+  @media (max-width:900px) { .grid2 { grid-template-columns:1fr; } }
   code { background:#e7f0ea; padding:2px 6px; border-radius:5px; font-size:12px; }
+  .never { color:var(--red); font-weight:600; }
 </style>
 </head>
 <body>
 <header>
-  <h1>Soko Huru control dashboard</h1>
+  <h1 id="title">Agency admin</h1>
   <div><input id="key" placeholder="staff key" autocomplete="off"><button class="ghost" id="connect" style="margin-left:8px">Connect</button></div>
 </header>
 
 <main>
   <div id="status"></div>
-
-  <div class="grid2">
-    <section class="panel">
-      <h2>Upload vacancy post</h2>
-      <label for="channel">Source</label>
-      <select id="channel">
-        <option value="poster_image">Poster image</option>
-        <option value="screenshot">Screenshot</option>
-        <option value="whatsapp_text" selected>WhatsApp message</option>
-        <option value="pasted_text">Pasted vacancy text</option>
-        <option value="pdf">PDF</option>
-        <option value="manual_entry">Manual entry</option>
-        <option value="email">Email</option>
-      </select>
-      <label for="employerName">Employer client</label>
-      <input id="employerName" placeholder="Zanzibar Resort">
-      <label for="imagePath">Poster file path (optional)</label>
-      <input id="imagePath" placeholder="/uploads/posters/....jpg">
-      <label for="text">Poster text or message</label>
-      <textarea id="text" placeholder="Paste the advert exactly as it went out on WhatsApp or Instagram"></textarea>
-      <button class="primary" id="extract" style="margin-top:12px">Read with Kobe AI</button>
-    </section>
-
-    <section class="panel">
-      <h2>Check what Kobe AI read</h2>
-      <div id="review"><p style="color:#5b6f66">Upload a post to see the extracted vacancy here.</p></div>
-    </section>
-  </div>
+  <div class="tiles" id="summary"></div>
 
   <section class="panel">
-    <h2>Clients and vacancies</h2>
+    <h2>1. Upload the job post</h2>
+    <div class="grid2">
+      <div>
+        <label for="employerName">Employer client</label>
+        <input id="employerName" placeholder="Zanzibar Resort">
+        <div class="grid2" style="gap:10px">
+          <div><label for="contactName">Contact person</label><input id="contactName"></div>
+          <div><label for="contactPhone">Phone</label><input id="contactPhone"></div>
+        </div>
+        <label for="contactEmail">Email</label><input id="contactEmail">
+      </div>
+      <div>
+        <label for="channel">Source</label>
+        <select id="channel">
+          <option value="poster_image">Poster image</option>
+          <option value="whatsapp_text" selected>WhatsApp message</option>
+          <option value="pasted_text">Pasted text</option>
+          <option value="manual_entry">Manual entry</option>
+        </select>
+        <label for="poster">Poster image (optional)</label>
+        <input id="poster" type="file" accept="image/*">
+      </div>
+    </div>
+    <label for="text">Poster text or message</label>
+    <textarea id="text" placeholder="Paste the advert exactly as it went out"></textarea>
+    <button class="primary" id="extract" style="margin-top:12px">Read with Kobe AI</button>
+  </section>
+
+  <section class="panel" id="reviewPanel" hidden>
+    <h2>2. Check what Kobe AI read</h2>
+    <div class="review">
+      <div class="poster" id="posterView"></div>
+      <div id="fields"></div>
+    </div>
+    <button class="primary" id="publish" style="margin-top:16px">Publish job</button>
+  </section>
+
+  <section class="panel">
+    <h2>Clients and jobs</h2>
     <table>
-      <thead><tr><th>Employer</th><th>Job</th><th class="num">Applications</th><th class="num">New</th>
-        <th class="num">Hired</th><th class="num">Remaining</th><th>Client last opened</th></tr></thead>
-      <tbody id="overview"><tr><td colspan="7" style="color:#5b6f66">Connect with your staff key.</td></tr></tbody>
+      <thead><tr><th>Employer</th><th>Job</th><th class="num">Applicants</th><th class="num">New</th>
+        <th class="num">Shortlisted</th><th class="num">Hired</th><th class="num">Left</th><th>Client last opened</th></tr></thead>
+      <tbody id="overview"><tr><td colspan="8" style="color:#5b6f66">Connect with your staff key.</td></tr></tbody>
     </table>
   </section>
 
   <div class="grid2">
     <section class="panel">
-      <h2>Client access</h2>
+      <h2>Payments to confirm</h2>
+      <div id="payments"></div>
+    </section>
+    <section class="panel">
+      <h2>Client links</h2>
       <div id="clients"></div>
+    </section>
+  </div>
+
+  <div class="grid2">
+    <section class="panel">
+      <h2>Membership packages</h2>
+      <div id="plans"></div>
     </section>
     <section class="panel">
       <h2>Live activity</h2>
@@ -99,13 +137,11 @@
 
 <script>
 const $ = (id) => document.getElementById(id);
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 let key = sessionStorage.getItem('kobeos_agency_key') || '';
 let draft = null;
+let posterPath = null;
 
-function escape(value) {
-  return String(value ?? '').replace(/[&<>"']/g, (ch) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
-}
 function notice(kind, text) { $('status').innerHTML = `<div class="notice ${kind}">${text}</div>`; }
 
 async function api(path, options = {}) {
@@ -118,101 +154,211 @@ async function api(path, options = {}) {
   return data;
 }
 
-const FIELDS = ['title','employerName','location','category','positions','accommodationProvided','mealsProvided',
-  'transportProvided','employmentType','workMode','genderRequirement','ageMin','ageMax','experienceYearsMin',
-  'experienceNote','educationMin','certificateRequired','immediateStart','startDate','applicationDeadline'];
+const TEXT_FIELDS = ['title', 'employerName', 'location', 'category', 'positions', 'applicationDeadline', 'contactInfo'];
+const LONG_FIELDS = ['description', 'responsibilities', 'requirements'];
+const FLAG_FIELDS = ['accommodationProvided', 'certificateRequired', 'immediateStart'];
 
-function renderReview(extraction) {
-  const vacancy = extraction.vacancy;
+function renderReview(extraction, rawText) {
+  $('reviewPanel').hidden = false;
+  $('posterView').innerHTML =
+    (posterPath ? `<img src="${esc(posterPath)}" alt="Original poster">` : '') +
+    `<pre>${esc(rawText)}</pre>`;
+
+  const job = extraction.job;
   const flagged = new Set(extraction.needsReview);
   const confidence = Object.fromEntries(extraction.confidence.map((entry) => [entry.field, entry]));
-  const salary = vacancy.salary;
-  const rows = FIELDS.map((field) => {
-    const value = vacancy[field];
-    const conf = confidence[field];
-    const hint = conf ? `${Math.round(conf.confidence * 100)}%` : 'not found';
-    return `<div class="field ${flagged.has(field) ? 'flag' : ''}">
-      <span class="name">${escape(field)}<br><small>${hint}</small></span>
-      <input data-field="${field}" value="${escape(value === null || value === undefined ? '' : value)}"></div>`;
-  }).join('');
+  const hint = (field) => {
+    const entry = confidence[field];
+    return entry ? `${Math.round(entry.confidence * 100)}%` : 'not found';
+  };
+  const wrap = (field, control) =>
+    `<div class="field ${flagged.has(field) ? 'flag' : ''}">
+       <span class="name">${esc(field)}<small>${hint(field)}</small></span>${control}</div>`;
 
-  $('review').innerHTML = `
-    <p style="margin:0 0 8px;font-size:13px;color:#5b6f66">Read by <code>${escape(extraction.extractor)}</code>,
-       language ${escape(extraction.detectedLanguage)}.
-       ${flagged.size ? `<strong style="color:#a86a10">${flagged.size} field(s) need a check.</strong>` : 'Nothing flagged.'}</p>
-    <div class="field"><span class="name">languages</span>
-      <input data-field="languages" value="${escape((vacancy.languages || []).join(', '))}"></div>
-    <div class="field"><span class="name">salary</span>
-      <input data-field="__salary" value="${salary ? escape(`${salary.currency} ${salary.amountMin ?? ''}${salary.amountMax ? '-' + salary.amountMax : ''} per ${salary.period}${salary.plusTips ? ' + tips' : ''}`) : ''}" disabled></div>
-    ${rows}
-    <button class="primary" id="publish" style="margin-top:14px">Publish swipe card and client page</button>`;
-
-  $('publish').addEventListener('click', publish);
+  const salary = job.salary;
+  $('fields').innerHTML =
+    TEXT_FIELDS.map((field) =>
+      wrap(field, `<input data-field="${field}" value="${esc(job[field] ?? '')}">`)).join('') +
+    wrap('salary', `<input data-field="__salary" value="${salary ? esc(`${salary.currency} ${salary.amountMin ?? ''}${salary.amountMax ? '-' + salary.amountMax : ''} / ${salary.period}${salary.plusTips ? ' + tips' : ''}`) : ''}" disabled>`) +
+    wrap('languages', `<input data-field="languages" value="${esc((job.languages || []).join(', '))}">`) +
+    wrap('experienceNote', `<input data-field="experienceNote" value="${esc(job.experienceNote ?? '')}">`) +
+    LONG_FIELDS.map((field) => {
+      const value = Array.isArray(job[field]) ? job[field].join('\n') : (job[field] ?? '');
+      return wrap(field, `<textarea data-field="${field}">${esc(value)}</textarea>`);
+    }).join('') +
+    FLAG_FIELDS.map((field) =>
+      wrap(field, `<select data-field="${field}">
+        <option value="true" ${job[field] ? 'selected' : ''}>Yes</option>
+        <option value="false" ${job[field] ? '' : 'selected'}>No</option></select>`)).join('');
 }
 
-function collectCorrections() {
-  const corrections = {};
-  document.querySelectorAll('#review input[data-field]').forEach((input) => {
-    const field = input.dataset.field;
+function corrections() {
+  const out = {};
+  document.querySelectorAll('#fields [data-field]').forEach((element) => {
+    const field = element.dataset.field;
     if (field.startsWith('__')) return;
-    const raw = input.value.trim();
-    if (field === 'languages') { corrections.languages = raw ? raw.split(',').map((s) => s.trim()).filter(Boolean) : []; return; }
-    if (raw === '') { corrections[field] = null; return; }
-    if (['positions','ageMin','ageMax','experienceYearsMin'].includes(field)) { corrections[field] = Number(raw); return; }
-    if (['accommodationProvided','mealsProvided','transportProvided','certificateRequired','immediateStart'].includes(field)) {
-      corrections[field] = raw === 'true'; return;
+    const raw = element.value.trim();
+    if (field === 'languages') { out.languages = raw ? raw.split(',').map((s) => s.trim()).filter(Boolean) : []; return; }
+    if (field === 'responsibilities' || field === 'requirements') {
+      out[field] = raw ? raw.split('\n').map((s) => s.trim()).filter(Boolean) : [];
+      return;
     }
-    corrections[field] = raw;
+    if (field === 'positions') { out.positions = raw ? Number(raw) : null; return; }
+    if (FLAG_FIELDS.includes(field)) { out[field] = raw === 'true'; return; }
+    out[field] = raw === '' ? null : raw;
   });
-  return corrections;
+  return out;
 }
 
-async function publish() {
+async function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+$('extract').addEventListener('click', async () => {
   try {
-    await api(`/api/agency/drafts/${draft.id}`, { method: 'PATCH', body: JSON.stringify({ corrections: collectCorrections() }) });
+    posterPath = null;
+    const file = $('poster').files[0];
+    if (file) {
+      const stored = await api('/api/agency/uploads/image', {
+        method: 'POST',
+        body: JSON.stringify({ filename: file.name, fileBase64: await fileToBase64(file) }),
+      });
+      posterPath = stored.path;
+    }
+    const result = await api('/api/agency/posts', {
+      method: 'POST',
+      body: JSON.stringify({
+        channel: $('channel').value,
+        text: $('text').value,
+        imagePath: posterPath,
+        employerName: $('employerName').value.trim() || null,
+      }),
+    });
+    draft = result.draft;
+    renderReview(result.extraction, $('text').value);
+    notice('ok', 'Extracted. Check the highlighted fields, fix anything wrong, then publish.');
+  } catch (error) { notice('err', esc(error.message)); }
+});
+
+$('publish').addEventListener('click', async () => {
+  try {
+    await api(`/api/agency/drafts/${draft.id}`, {
+      method: 'PATCH', body: JSON.stringify({ corrections: corrections() }),
+    });
     const result = await api(`/api/agency/drafts/${draft.id}/publish`, {
       method: 'POST',
-      body: JSON.stringify({ employerName: $('employerName').value.trim() || null }),
+      body: JSON.stringify({
+        employerName: $('employerName').value.trim() || null,
+        contactName: $('contactName').value.trim() || null,
+        contactPhone: $('contactPhone').value.trim() || null,
+        contactEmail: $('contactEmail').value.trim() || null,
+      }),
     });
-    const code = result.employerAccessCode
-      ? `<br>One-time access code for ${escape(result.employerName)}: <strong>${escape(result.employerAccessCode.secret)}</strong>`
-      : '';
-    const portalPath = new URL(result.portalUrl).pathname;
-    notice('ok', `Published. <a href="${escape(portalPath)}">Open ${escape(result.employerName)}'s page</a>
-      · card link ${escape(result.vacancyUrl)}${code}`);
-    $('review').innerHTML = '<p style="color:#5b6f66">Published. Upload the next poster.</p>';
+    const code = result.accessCode
+      ? `<br>Access code for ${esc(result.employerName)}: <strong>${esc(result.accessCode.secret)}</strong>` : '';
+    notice('ok', `Published. Employer link: <code>${esc(result.employerLink)}</code>${code}`);
+    $('reviewPanel').hidden = true;
     $('text').value = '';
+    $('poster').value = '';
     await refresh();
-  } catch (error) { notice('err', escape(error.message)); }
-}
+  } catch (error) { notice('err', esc(error.message)); }
+});
 
 async function refresh() {
-  const [overview, clients] = await Promise.all([api('/api/agency/overview'), api('/api/agency/clients')]);
+  const [overview, clients, payments, plans] = await Promise.all([
+    api('/api/agency/overview'), api('/api/agency/clients'),
+    api('/api/agency/payments'), api('/api/agency/plans'),
+  ]);
+
+  const s = overview.summary;
+  $('summary').innerHTML = [
+    ['Clients', s.clients], ['Jobs', s.jobs], ['Applicants', s.applications],
+    ['Shortlisted', s.shortlisted], ['Hired', s.hired],
+  ].map(([label, value]) => `<div class="tile"><b>${value}</b><span>${label}</span></div>`).join('');
+
   $('overview').innerHTML = overview.rows.length === 0
-    ? `<tr><td colspan="7" style="color:#5b6f66">No published vacancies yet.</td></tr>`
+    ? `<tr><td colspan="8" style="color:#5b6f66">No published jobs yet.</td></tr>`
     : overview.rows.map((row) => `<tr>
-        <td>${escape(row.employerName)}</td><td>${escape(row.jobTitle)}</td>
+        <td>${esc(row.employerName)}</td><td>${esc(row.jobTitle)}</td>
         <td class="num">${row.applications}</td><td class="num">${row.newApplications}</td>
-        <td class="num">${row.hired}</td><td class="num">${row.remainingPositions}</td>
-        <td>${row.employerLastSeenAt ? escape(new Date(row.employerLastSeenAt).toLocaleString()) : '<span class="chase">never opened</span>'}</td>
+        <td class="num">${row.shortlisted}</td><td class="num">${row.hired}</td>
+        <td class="num">${row.remainingPositions}</td>
+        <td>${row.employerLastSeenAt ? esc(new Date(row.employerLastSeenAt).toLocaleString()) : '<span class="never">never opened</span>'}</td>
       </tr>`).join('');
 
-  $('clients').innerHTML = clients.clients.map((client) => `
-    <div class="field" style="grid-template-columns:1fr auto">
-      <span>${escape(client.employer.name)}<br>
-        <small style="color:#5b6f66">${escape(client.portalUrl || '')}</small>
-        ${client.needsChasing ? '<br><span class="chase">candidates waiting, not reviewed</span>' : ''}</span>
-      <button class="ghost" data-employer="${escape(client.employer.id)}">Resend access</button>
-    </div>`).join('') || '<p style="color:#5b6f66">No clients yet.</p>';
+  $('payments').innerHTML = payments.payments.length === 0
+    ? '<p style="color:#5b6f66;margin:0">Nothing waiting.</p>'
+    : payments.payments.map((payment) => `
+        <div class="field" style="grid-template-columns:1fr auto">
+          <span><strong>${esc(payment.applicantName)}</strong> · ${esc(payment.planName)}<br>
+            <small style="color:#5b6f66">TSh ${payment.amountTzs.toLocaleString()} · ref ${esc(payment.reference)}</small></span>
+          <span><button class="primary" data-confirm="${esc(payment.id)}">Confirm</button>
+            <button class="danger" data-reject="${esc(payment.id)}">Reject</button></span>
+        </div>`).join('');
 
-  document.querySelectorAll('#clients button[data-employer]').forEach((button) => {
+  $('clients').innerHTML = clients.clients.length === 0
+    ? '<p style="color:#5b6f66;margin:0">No clients yet.</p>'
+    : clients.clients.map((client) => `
+        <div class="field" style="grid-template-columns:1fr auto">
+          <span><strong>${esc(client.employer.name)}</strong><br>
+            <code>${esc(client.employerLink)}</code><br>
+            <small style="color:#5b6f66">${client.applications} applicants · ${client.newApplications} new</small></span>
+          <button class="ghost" data-employer="${esc(client.employer.id)}">New access code</button>
+        </div>`).join('');
+
+  $('plans').innerHTML = plans.plans.map((plan) => `
+    <div class="field" style="grid-template-columns:1fr 120px auto">
+      <span><strong>${esc(plan.name)}</strong><br>
+        <small style="color:#5b6f66">${plan.coversCertificateJobs ? 'certificate + non-certificate' : 'non-certificate only'} · ${plan.durationDays} days</small></span>
+      <input value="${plan.priceTzs}" data-price="${esc(plan.code)}" inputmode="numeric">
+      <button class="ghost" data-save-plan="${esc(plan.code)}">Save</button>
+    </div>`).join('');
+
+  bind();
+}
+
+function bind() {
+  document.querySelectorAll('[data-confirm]').forEach((button) => {
     button.addEventListener('click', async () => {
       try {
-        const issued = await api(`/api/agency/clients/${button.dataset.employer}/access`, {
-          method: 'POST', body: JSON.stringify({ kind: 'one_time_code' }),
-        });
-        notice('ok', `New one-time code: <strong>${escape(issued.secret)}</strong> (expires ${escape(new Date(issued.expiresAt).toLocaleString())})`);
-      } catch (error) { notice('err', escape(error.message)); }
+        await api(`/api/agency/payments/${button.dataset.confirm}/confirm`, { method: 'POST', body: '{}' });
+        notice('ok', 'Payment confirmed. The applicant can apply now.');
+        await refresh();
+      } catch (error) { notice('err', esc(error.message)); }
+    });
+  });
+  document.querySelectorAll('[data-reject]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const note = prompt('Why is this payment being rejected?');
+      if (!note) return;
+      try {
+        await api(`/api/agency/payments/${button.dataset.reject}/reject`, { method: 'POST', body: JSON.stringify({ note }) });
+        await refresh();
+      } catch (error) { notice('err', esc(error.message)); }
+    });
+  });
+  document.querySelectorAll('[data-employer]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      try {
+        const issued = await api(`/api/agency/clients/${button.dataset.employer}/access`, { method: 'POST', body: '{}' });
+        notice('ok', `New access code: <strong>${esc(issued.secret)}</strong> for <code>${esc(issued.employerLink)}</code>`);
+      } catch (error) { notice('err', esc(error.message)); }
+    });
+  });
+  document.querySelectorAll('[data-save-plan]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const code = button.dataset.savePlan;
+      const price = document.querySelector(`[data-price="${code}"]`).value;
+      try {
+        await api(`/api/agency/plans/${code}`, { method: 'PUT', body: JSON.stringify({ priceTzs: Number(price) }) });
+        notice('ok', 'Package updated.');
+        await refresh();
+      } catch (error) { notice('err', esc(error.message)); }
     });
   });
 }
@@ -220,8 +366,8 @@ async function refresh() {
 function listen() {
   const source = new EventSource(`/api/agency/stream?key=${encodeURIComponent(key)}`);
   const log = $('log');
-  for (const type of ['application_received','application_status_changed','vacancy_published','draft_created',
-                      'more_candidates_requested','employer_access_issued','vacancy_closed']) {
+  for (const type of ['application_received', 'application_status_changed', 'job_published', 'draft_created',
+                      'payment_submitted', 'employer_access_issued', 'employer_otp_requested', 'job_closed']) {
     source.addEventListener(type, (event) => {
       const payload = JSON.parse(event.data);
       const line = document.createElement('div');
@@ -232,27 +378,10 @@ function listen() {
   }
 }
 
-$('extract').addEventListener('click', async () => {
-  try {
-    const result = await api('/api/agency/uploads', {
-      method: 'POST',
-      body: JSON.stringify({
-        channel: $('channel').value,
-        text: $('text').value,
-        imagePath: $('imagePath').value.trim() || null,
-        employerName: $('employerName').value.trim() || null,
-      }),
-    });
-    draft = result.draft;
-    renderReview(result.extraction);
-    notice('ok', 'Extracted. Check the flagged fields, correct anything wrong, then publish.');
-  } catch (error) { notice('err', escape(error.message)); }
-});
-
 $('connect').addEventListener('click', () => {
   key = $('key').value.trim();
   sessionStorage.setItem('kobeos_agency_key', key);
-  refresh().then(listen).catch((error) => notice('err', escape(error.message)));
+  refresh().then(listen).catch((error) => notice('err', esc(error.message)));
 });
 
 if (key) { $('key').value = key; refresh().then(listen).catch(() => {}); }

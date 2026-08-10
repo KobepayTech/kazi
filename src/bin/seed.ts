@@ -1,17 +1,18 @@
 /**
- * Seeds the exact scenario from the workflow: a Zanzibar hotel sends a vacancy
- * to Soko Huru, Soko Huru uploads its poster to KobeOS, applicants swipe, and
- * the employer's page fills up in real time.
+ * Seeds the MVP loop end to end: the agency uploads posters it already sent
+ * out, applicants register and pay, staff confirm the payments, applicants
+ * swipe right, and one employer works through its candidates.
  *
  *   node src/bin/seed.ts [--force]
  */
-import { createApp } from '../app.ts';
-import type { Actor } from '../domain/types.ts';
+import { createPlatform } from '../app.ts';
+import type { Actor, JobCategory } from '../domain/types.ts';
 
 const force = process.argv.includes('--force');
-const app = createApp();
+const platform = createPlatform();
+const kobe = platform.tenantContext(platform.defaultTenant.id);
 
-if (app.store.listEmployers().length > 0 && !force) {
+if (kobe.store.listEmployers().length > 0 && !force) {
   console.log('Database already has data. Re-run with --force to add the demo on top of it.');
   process.exit(0);
 }
@@ -21,7 +22,11 @@ const staff: Actor = { kind: 'agency', id: 'staff_amina' };
 const POSTERS = [
   {
     employerName: 'Zanzibar Resort',
+    contactName: 'Salma Khamis',
+    contactPhone: '+255777000111',
+    contactEmail: 'hr@zanzibarresort.example',
     channel: 'whatsapp_text' as const,
+    imagePath: null,
     text: [
       'AJIRA EXCLUSIVE - SOKO HURU',
       'We require eight female hotel attendants.',
@@ -30,31 +35,40 @@ const POSTERS = [
       'Accommodation provided',
       'English required',
       'Hospitality experience preferred',
-      'Age: 18-35',
       'Ready to start immediately',
+      'Contact: 0777 000 111',
     ].join('\n'),
-    imagePath: '/uploads/posters/zanzibar-resort-attendants.jpg',
   },
   {
     employerName: 'ABC Call Centre',
-    channel: 'poster_image' as const,
+    contactName: 'Peter Mlay',
+    contactPhone: '+255777000222',
+    contactEmail: 'jobs@abccall.example',
+    channel: 'pasted_text' as const,
+    imagePath: null,
     text: [
-      'AJIRA EXCLUSIVE - SOKO HURU',
       'Job title: Call Centre Agent',
       'Company: ABC Call Centre',
       'Location: Dar es Salaam',
       'Positions: 12',
       'Salary: TSh 450,000 per month',
-      'Education: Form four and above',
       'Languages: English and Swahili',
-      'Experience: 1 year customer care experience preferred',
-      'Employment type: Full time',
+      'Responsibilities:',
+      'Answer customer calls',
+      'Log every complaint in the system',
+      'Requirements:',
+      'Form four and above',
+      '1 year customer care experience preferred',
+      'Deadline: 2026-09-15',
     ].join('\n'),
-    imagePath: '/uploads/posters/abc-call-centre.jpg',
   },
   {
     employerName: 'City Logistics',
+    contactName: 'John Massawe',
+    contactPhone: '+255777000333',
+    contactEmail: null,
     channel: 'pasted_text' as const,
+    imagePath: null,
     text: [
       'Tunahitaji madereva 15 wa malori.',
       'Eneo: Dar es Salaam',
@@ -64,49 +78,32 @@ const POSTERS = [
       'Chakula na malazi hutolewa safarini',
       'Anza mara moja',
     ].join('\n'),
-    imagePath: null,
-  },
-  {
-    employerName: 'Mwanga Private School',
-    channel: 'manual_entry' as const,
-    text: [
-      'Job title: Secondary School Teacher',
-      'Company: Mwanga Private School',
-      'Location: Arusha',
-      'Positions: 4',
-      'Salary: TSh 700,000 per month',
-      'Education: Degree in education',
-      'Certificate required',
-      'Experience: 2 years teaching experience',
-      'Accommodation: provided',
-      'Languages: English',
-    ].join('\n'),
-    imagePath: null,
   },
 ];
 
 const published = [];
 for (const poster of POSTERS) {
-  const { draft, extraction } = await app.intake.uploadPost({
+  const { draft } = await kobe.intake.uploadPost({
     channel: poster.channel,
     text: poster.text,
     imagePath: poster.imagePath,
     employerName: poster.employerName,
     staffId: staff.id,
   });
-  console.log(`Extracted "${extraction.vacancy.title}" for ${poster.employerName}`);
-  if (extraction.needsReview.length > 0) {
-    console.log(`  staff to check: ${extraction.needsReview.join(', ')}`);
+  console.log(`Extracted "${draft.extraction.job.title}" for ${poster.employerName}`);
+  if (draft.extraction.needsReview.length > 0) {
+    console.log(`  staff to check: ${draft.extraction.needsReview.join(', ')}`);
   }
-  const result = app.intake.publishDraft(draft.id, {
+  const result = kobe.intake.publishDraft(draft.id, {
     staffId: staff.id,
     employerName: poster.employerName,
+    contactName: poster.contactName,
+    contactPhone: poster.contactPhone,
+    contactEmail: poster.contactEmail,
   });
   published.push(result);
-  console.log(`  published -> ${result.vacancyUrl}`);
-  if (result.employerAccessCode !== null) {
-    console.log(`  employer access code: ${result.employerAccessCode.secret}`);
-  }
+  console.log(`  published -> ${result.employerLink}`);
+  if (result.accessCode !== null) console.log(`  employer access code: ${result.accessCode.secret}`);
 }
 
 const APPLICANTS = [
@@ -114,162 +111,87 @@ const APPLICANTS = [
     fullName: 'Neema Joseph',
     phone: '+255711000001',
     location: 'Dar es Salaam',
-    gender: 'female' as const,
-    dateOfBirth: '2001-04-12',
+    categories: ['hospitality'] as JobCategory[],
+    experienceYears: 2,
+    educationLevel: 'secondary' as const,
+    skills: ['Housekeeping', 'Guest relations'],
     languages: ['English', 'Swahili'],
     willingToRelocate: true,
-    cv: {
-      label: 'Hospitality CV',
-      categories: ['hospitality' as const],
-      headline: 'Hotel attendant with two years in beach resorts',
-      experienceYears: 2,
-      educationLevel: 'secondary' as const,
-      skills: ['Housekeeping', 'Guest relations', 'Front desk'],
-      certificates: ['Food hygiene basics'],
-      preferredSalaryTzs: 400_000,
-    },
-    packageCode: 'non_certificate',
+    planCode: 'non_certificate',
   },
   {
     fullName: 'Asha Mwinyi',
     phone: '+255711000002',
     location: 'Zanzibar',
-    gender: 'female' as const,
-    dateOfBirth: '1999-09-03',
+    categories: ['hospitality'] as JobCategory[],
+    experienceYears: 4,
+    educationLevel: 'certificate' as const,
+    skills: ['Housekeeping', 'Team leading'],
     languages: ['English', 'Swahili', 'Italian'],
     willingToRelocate: false,
-    cv: {
-      label: 'Hospitality CV',
-      categories: ['hospitality' as const],
-      headline: 'Resort housekeeping supervisor',
-      experienceYears: 4,
-      educationLevel: 'certificate' as const,
-      skills: ['Housekeeping', 'Team leading', 'Stock control'],
-      certificates: ['Certificate in hotel operations'],
-      preferredSalaryTzs: 450_000,
-    },
-    packageCode: 'certificate',
+    planCode: 'certificate',
   },
   {
     fullName: 'Juma Salehe',
     phone: '+255711000003',
     location: 'Dar es Salaam',
-    gender: 'male' as const,
-    dateOfBirth: '1993-01-22',
+    categories: ['driving'] as JobCategory[],
+    experienceYears: 6,
+    educationLevel: 'secondary' as const,
+    skills: ['Long haul', 'Vehicle maintenance'],
     languages: ['Swahili', 'English'],
     willingToRelocate: true,
-    cv: {
-      label: 'Driving CV',
-      categories: ['driving' as const],
-      headline: 'Truck driver, class C licence, 6 years long haul',
-      experienceYears: 6,
-      educationLevel: 'secondary' as const,
-      skills: ['Long haul', 'Vehicle maintenance', 'Route planning'],
-      certificates: ['Class C driving licence'],
-      preferredSalaryTzs: 550_000,
-    },
-    packageCode: 'certificate',
-  },
-  {
-    fullName: 'Grace Mushi',
-    phone: '+255711000004',
-    location: 'Arusha',
-    gender: 'female' as const,
-    dateOfBirth: '1995-06-18',
-    languages: ['English', 'Swahili'],
-    willingToRelocate: false,
-    cv: {
-      label: 'Teaching CV',
-      categories: ['teaching' as const],
-      headline: 'Secondary school teacher of biology and chemistry',
-      experienceYears: 3,
-      educationLevel: 'degree' as const,
-      skills: ['Lesson planning', 'Laboratory work'],
-      certificates: ['Bachelor of Education'],
-      preferredSalaryTzs: 650_000,
-    },
-    packageCode: 'certificate',
+    planCode: 'certificate',
   },
   {
     fullName: 'Fatuma Ally',
-    phone: '+255711000005',
+    phone: '+255711000004',
     location: 'Dar es Salaam',
-    gender: 'female' as const,
-    dateOfBirth: '2002-11-30',
+    categories: ['customer_care'] as JobCategory[],
+    experienceYears: 1,
+    educationLevel: 'secondary' as const,
+    skills: ['Inbound calls', 'CRM'],
     languages: ['English', 'Swahili'],
     willingToRelocate: true,
-    cv: {
-      label: 'Customer care CV',
-      categories: ['customer_care' as const, 'sales' as const],
-      headline: 'Call centre agent, one year inbound support',
-      experienceYears: 1,
-      educationLevel: 'secondary' as const,
-      skills: ['Inbound calls', 'CRM', 'Complaint handling'],
-      certificates: [],
-      preferredSalaryTzs: 400_000,
-    },
-    packageCode: 'non_certificate',
+    planCode: 'non_certificate',
   },
 ];
 
-const applicantIds: Record<string, string> = {};
+const sessions: { name: string; applicantId: string; token: string }[] = [];
 for (const person of APPLICANTS) {
-  const applicant = app.agency.registerApplicant({
+  const { applicant } = kobe.applicants.register({
     fullName: person.fullName,
     phone: person.phone,
     location: person.location,
-    gender: person.gender,
-    dateOfBirth: person.dateOfBirth,
-    educationLevel: person.cv.educationLevel,
+    educationLevel: person.educationLevel,
+    experienceYears: person.experienceYears,
+    skills: person.skills,
     languages: person.languages,
     willingToRelocate: person.willingToRelocate,
-    verified: true,
+    categories: person.categories,
   });
-  applicantIds[person.fullName] = applicant.id;
+  const issued = kobe.access.startApplicantSession(applicant.id);
+  sessions.push({ name: person.fullName, applicantId: applicant.id, token: issued.token });
 
-  app.store.addCv({
+  // Pay, submit the reference, agency confirms.
+  const plan = kobe.store.getPlan(person.planCode);
+  const { payment } = kobe.memberships.submitPayment({
     applicantId: applicant.id,
-    label: person.cv.label,
-    categories: person.cv.categories,
-    headline: person.cv.headline,
-    experienceYears: person.cv.experienceYears,
-    educationLevel: person.cv.educationLevel,
-    skills: person.cv.skills,
-    languages: person.languages,
-    certificates: person.cv.certificates,
-    preferredSalaryTzs: person.cv.preferredSalaryTzs,
-    filePath: null,
-    isDefault: true,
+    planCode: person.planCode,
+    amountTzs: plan?.priceTzs ?? 0,
+    reference: `MPESA-${person.phone.slice(-6)}`,
   });
-
-  app.store.savePreferences({
-    applicantId: applicant.id,
-    locations: [],
-    categories: person.cv.categories,
-    minSalaryTzs: null,
-    maxSalaryTzs: null,
-    certificateRequired: null,
-    educationLevelMax: null,
-    experienceYearsMax: null,
-    accommodationRequiredOutsideHome: false,
-    employmentTypes: [],
-    workModes: [],
-    willingToRelocate: person.willingToRelocate,
-    genderNeutralOnly: false,
-    immediateStartOnly: false,
-  });
-
-  const membership = app.memberships.purchase(applicant.id, person.packageCode);
-  const pkg = app.store.getPackage(person.packageCode);
-  app.memberships.confirmPayment(membership.id, pkg?.priceTzs ?? 0, `MPESA-${person.phone.slice(-6)}`);
-  console.log(`Registered ${person.fullName} on the ${pkg?.name ?? person.packageCode} package`);
+  kobe.memberships.confirmPayment(payment.id, staff.id);
+  console.log(`Registered ${person.fullName} on the ${plan?.name ?? person.planCode} package`);
 }
 
-// Everyone swipes right on the top card their filters produced.
-for (const [name, applicantId] of Object.entries(applicantIds)) {
-  const cards = app.swipe.feed(applicantId, 5);
-  for (const card of cards.slice(0, 2)) {
-    const outcome = app.swipe.swipe(applicantId, card.vacancyId, 'right');
+// Applicants swipe right on the top card their filters produced. The first
+// call returns the confirmation prompt; the second one actually applies.
+for (const { name, applicantId } of sessions) {
+  for (const card of kobe.swipe.feed(applicantId, 3)) {
+    const prompt = kobe.swipe.swipe(applicantId, card.jobId, 'right');
+    if (prompt.result !== 'confirm_required') continue;
+    const outcome = kobe.swipe.swipe(applicantId, card.jobId, 'right', true);
     if (outcome.result === 'applied') {
       console.log(`${name} applied to ${card.title} -> ${outcome.confirmation.applicationNumber}`);
     } else if (outcome.result === 'blocked') {
@@ -281,38 +203,30 @@ for (const [name, applicantId] of Object.entries(applicantIds)) {
 // The Zanzibar client works through its first candidates.
 const zanzibar = published[0];
 if (zanzibar !== undefined) {
-  const employerActor: Actor = { kind: 'employer', id: zanzibar.employerId };
-  const applications = app.employer.applications(zanzibar.employerId, { vacancyId: zanzibar.vacancy.id });
-  applications.forEach((entry, index) => {
-    app.employer.openApplication(zanzibar.employerId, entry.application.id, employerActor);
+  const actor: Actor = { kind: 'employer', id: zanzibar.employerId };
+  const candidates = kobe.employer.candidates(zanzibar.employerId, { jobId: zanzibar.job.id });
+  candidates.forEach((entry, index) => {
+    kobe.employer.openCandidate(zanzibar.employerId, entry.application.id, actor);
     if (index === 0) {
-      app.employer.shortlist(zanzibar.employerId, entry.application.id, employerActor, 'Strong resort experience');
-      app.employer.inviteToInterview(
-        zanzibar.employerId,
-        entry.application.id,
-        new Date(Date.now() + 3 * 86_400_000).toISOString(),
-        employerActor,
-        'Interview at the resort office',
-      );
+      kobe.employer.shortlist(zanzibar.employerId, entry.application.id, actor, 'Strong resort experience');
+      kobe.employer.inviteToInterview(zanzibar.employerId, entry.application.id, actor, 'Interview at the resort');
     }
   });
-
-  const stats = app.store.vacancyStats(zanzibar.vacancy.id);
-  console.log('\nZanzibar Resort dashboard:', stats);
-  console.log(`Portal: ${zanzibar.portalUrl}`);
+  console.log('\nZanzibar Resort page:', kobe.store.jobStats(zanzibar.job.id));
+  console.log(`Employer link: ${zanzibar.employerLink}`);
 }
 
-console.log('\nSoko Huru control dashboard');
-for (const row of app.agency.overview()) {
+console.log('\nAgency admin');
+for (const row of kobe.agency.overview()) {
   console.log(
-    `  ${row.employerName.padEnd(24)} ${row.jobTitle.padEnd(26)} ${String(row.applications).padStart(3)} applications`,
+    `  ${row.employerName.padEnd(20)} ${row.jobTitle.padEnd(24)} ${String(row.applications).padStart(3)} applicants` +
+      `  ${String(row.shortlisted).padStart(2)} shortlisted  ${String(row.hired).padStart(2)} hired`,
   );
 }
 
-console.log('\nApplicant app tokens (hand these to the applicant with their account):');
-for (const [name, applicantId] of Object.entries(applicantIds)) {
-  const session = app.access.startApplicantSession(applicantId);
-  console.log(`  ${name.padEnd(16)} ${applicantId}  ${session.token}`);
+console.log('\nApplicant app tokens');
+for (const entry of sessions) {
+  console.log(`  ${entry.name.padEnd(16)} ${entry.applicantId}  ${entry.token}`);
 }
 
-app.close();
+platform.close();

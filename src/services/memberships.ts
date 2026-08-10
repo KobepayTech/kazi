@@ -1,136 +1,168 @@
-import type { Store } from '../data/store.ts';
-import { daysUntilExpiry, expiryFor, isActive, remainingApplications } from '../domain/membership.ts';
-import type { Membership, MembershipPackage } from '../domain/types.ts';
+import type { TenantStore } from '../data/store.ts';
+import { DEFAULT_PLANS, daysUntilExpiry, expiryFor, isActive } from '../domain/plans.ts';
+import type { Membership, MembershipPlan, Payment } from '../domain/types.ts';
 import { AppError } from './errors.ts';
-import { EventBus } from './events.ts';
+import { AGENCY_SCOPE_ID, EventBus } from './events.ts';
 
 export type MembershipView = {
   membership: Membership | null;
-  package: MembershipPackage | null;
+  plan: MembershipPlan | null;
   active: boolean;
   daysRemaining: number | null;
-  applicationsRemaining: number | null;
-};
-
-export type RenewalReminder = {
-  membership: Membership;
-  applicantId: string;
-  applicantName: string;
-  phone: string;
-  packageName: string;
-  daysRemaining: number | null;
-  expiresAt: string | null;
+  pendingPayment: Payment | null;
 };
 
 /**
- * Membership activation, payment confirmation, expiry and renewal reminders.
- * Soko Huru sets the prices and durations; KobeOS enforces them.
+ * MVP payments: the applicant pays by mobile money, submits the transaction
+ * reference, and the agency confirms it. Confirmation is what starts the
+ * membership. Automatic reconciliation comes later.
  */
 export class MembershipService {
-  private readonly store: Store;
+  private readonly store: TenantStore;
   private readonly bus: EventBus;
 
-  constructor(store: Store, bus: EventBus) {
+  constructor(store: TenantStore, bus: EventBus) {
     this.store = store;
     this.bus = bus;
   }
 
-  packages(): MembershipPackage[] {
-    return this.store.listPackages().filter((pkg) => pkg.active);
+  /** Seeds the agency's three packages on a new tenant. */
+  seedDefaultPlans(): MembershipPlan[] {
+    return DEFAULT_PLANS.map((plan) => this.store.upsertPlan(plan));
   }
 
-  /** Applicant selects a package; it stays pending until payment is confirmed. */
-  purchase(applicantId: string, packageCode: string): Membership {
-    if (this.store.getApplicant(applicantId) === null) throw AppError.notFound('Applicant not found.');
-    const pkg = this.store.getPackage(packageCode);
-    if (pkg === null || !pkg.active) throw AppError.badRequest('unknown_package', 'That membership package is not available.');
-    const membership = this.store.createMembership({ applicantId, packageCode });
-    this.bus.publish('applicant', applicantId, 'membership_pending', {
-      membershipId: membership.id,
-      packageCode,
-      amountDueTzs: pkg.priceTzs,
-    });
-    return membership;
+  plans(): MembershipPlan[] {
+    return this.store.listPlans().filter((plan) => plan.active);
   }
 
-  /** Payment confirmation from Soko Huru: this is what switches applying on. */
-  confirmPayment(membershipId: string, paidAmountTzs: number, paymentReference: string): Membership {
-    const membership = this.store.getMembership(membershipId);
-    if (membership === null) throw AppError.notFound('Membership not found.');
-    const pkg = this.store.getPackage(membership.packageCode);
-    if (pkg === null) throw AppError.notFound('Membership package not found.');
-    if (membership.status === 'active') {
-      throw AppError.conflict('already_active', 'This membership is already active.');
+  allPlans(): MembershipPlan[] {
+    return this.store.listPlans();
+  }
+
+  /** The agency admin changing a price, a name or a duration. */
+  savePlan(plan: Omit<MembershipPlan, 'tenantId'>): MembershipPlan {
+    if (plan.priceTzs < 0) throw AppError.badRequest('invalid_price', 'A price cannot be negative.');
+    if (plan.durationDays <= 0) throw AppError.badRequest('invalid_duration', 'A package must last at least one day.');
+    return this.store.upsertPlan(plan);
+  }
+
+  /**
+   * Records the applicant's payment claim. The membership exists immediately
+   * but stays pending until the agency confirms the reference.
+   */
+  submitPayment(input: {
+    applicantId: string;
+    planCode: string;
+    amountTzs: number;
+    reference: string;
+    method?: string;
+  }): { membership: Membership; payment: Payment; plan: MembershipPlan } {
+    if (this.store.getApplicant(input.applicantId) === null) throw AppError.notFound('Applicant not found.');
+    const plan = this.store.getPlan(input.planCode);
+    if (plan === null || !plan.active) {
+      throw AppError.badRequest('unknown_plan', 'That membership package is not available.');
     }
-    if (paidAmountTzs < pkg.priceTzs) {
+    if (this.store.findPaymentByReference(input.reference) !== null) {
+      throw AppError.conflict('duplicate_reference', 'That transaction reference has already been submitted.');
+    }
+
+    const { membership, payment } = this.store.transaction(() => {
+      const created = this.store.createMembership(input.applicantId, plan.code);
+      const recorded = this.store.createPayment({
+        applicantId: input.applicantId,
+        membershipId: created.id,
+        amountTzs: input.amountTzs,
+        reference: input.reference,
+        method: input.method ?? 'mobile_money',
+      });
+      return { membership: created, payment: recorded };
+    });
+
+    const applicant = this.store.getApplicant(input.applicantId);
+    this.bus.publish('agency', AGENCY_SCOPE_ID, 'payment_submitted', {
+      paymentId: payment.id,
+      applicantId: input.applicantId,
+      applicantName: applicant?.fullName ?? input.applicantId,
+      planName: plan.name,
+      amountTzs: payment.amountTzs,
+      reference: payment.reference,
+    });
+    this.bus.publish('applicant', input.applicantId, 'payment_submitted', {
+      paymentId: payment.id,
+      planName: plan.name,
+      amountTzs: payment.amountTzs,
+    });
+
+    return { membership, payment, plan };
+  }
+
+  /** Agency staff confirming money received. This is what switches applying on. */
+  confirmPayment(paymentId: string, staffId: string): { payment: Payment; membership: Membership } {
+    const payment = this.store.getPayment(paymentId);
+    if (payment === null) throw AppError.notFound('Payment not found.');
+    if (payment.status === 'confirmed') throw AppError.conflict('already_confirmed', 'That payment is already confirmed.');
+
+    const membership = this.store.getMembership(payment.membershipId);
+    if (membership === null) throw AppError.notFound('Membership not found.');
+    const plan = this.store.getPlan(membership.planCode);
+    if (plan === null) throw AppError.notFound('Membership package not found.');
+    if (payment.amountTzs < plan.priceTzs) {
       throw AppError.badRequest(
         'underpaid',
-        `${pkg.name} costs TSh ${pkg.priceTzs.toLocaleString('en-US')}. Received TSh ${paidAmountTzs.toLocaleString('en-US')}.`,
+        `${plan.name} costs TSh ${plan.priceTzs.toLocaleString('en-US')}. This payment was TSh ${payment.amountTzs.toLocaleString('en-US')}.`,
       );
     }
-    const activated = this.store.activateMembership(
-      membershipId,
-      paidAmountTzs,
-      paymentReference,
-      expiryFor(new Date(), pkg),
-    );
-    this.bus.publish('applicant', membership.applicantId, 'membership_activated', {
-      membershipId,
-      packageCode: pkg.code,
-      packageName: pkg.name,
-      expiresAt: activated.expiresAt,
-      applicationLimit: pkg.applicationLimit,
+
+    const result = this.store.transaction(() => ({
+      payment: this.store.reviewPayment(paymentId, 'confirmed', staffId, null),
+      membership: this.store.activateMembership(membership.id, expiryFor(new Date(), plan)),
+    }));
+
+    this.bus.publish('applicant', payment.applicantId, 'membership_activated', {
+      membershipId: membership.id,
+      planName: plan.name,
+      expiresAt: result.membership.expiresAt,
     });
-    return activated;
+    return result;
+  }
+
+  rejectPayment(paymentId: string, staffId: string, note: string): Payment {
+    const payment = this.store.getPayment(paymentId);
+    if (payment === null) throw AppError.notFound('Payment not found.');
+    if (payment.status === 'confirmed') {
+      throw AppError.conflict('already_confirmed', 'That payment is already confirmed.');
+    }
+    const rejected = this.store.reviewPayment(paymentId, 'rejected', staffId, note);
+    this.bus.publish('applicant', payment.applicantId, 'payment_rejected', {
+      paymentId,
+      reference: payment.reference,
+      note,
+    });
+    return rejected;
+  }
+
+  pendingPayments(): Payment[] {
+    return this.store.listPayments('submitted');
   }
 
   view(applicantId: string): MembershipView {
     const membership = this.store.getActiveMembership(applicantId) ?? this.store.getLatestMembership(applicantId);
     if (membership === null) {
-      return { membership: null, package: null, active: false, daysRemaining: null, applicationsRemaining: null };
+      return { membership: null, plan: null, active: false, daysRemaining: null, pendingPayment: null };
     }
-    const pkg = this.store.getPackage(membership.packageCode);
+    const pending = this.store
+      .listPayments('submitted')
+      .find((payment) => payment.membershipId === membership.id) ?? null;
     return {
       membership,
-      package: pkg,
+      plan: this.store.getPlan(membership.planCode),
       active: isActive(membership),
       daysRemaining: daysUntilExpiry(membership),
-      applicationsRemaining: pkg === null ? null : remainingApplications(membership, pkg),
+      pendingPayment: pending,
     };
   }
 
-  /** Flips memberships whose date has passed; run on a schedule or on demand. */
   expireLapsed(): number {
     return this.store.expireLapsedMemberships();
-  }
-
-  renewalsDue(withinDays = 7): RenewalReminder[] {
-    return this.store.listMembershipsExpiringWithin(withinDays).map((membership) => {
-      const applicant = this.store.getApplicant(membership.applicantId);
-      const pkg = this.store.getPackage(membership.packageCode);
-      return {
-        membership,
-        applicantId: membership.applicantId,
-        applicantName: applicant?.fullName ?? 'Applicant',
-        phone: applicant?.phone ?? '',
-        packageName: pkg?.name ?? membership.packageCode,
-        daysRemaining: daysUntilExpiry(membership),
-        expiresAt: membership.expiresAt,
-      };
-    });
-  }
-
-  /** Emits a reminder event per lapsing membership, for SMS or WhatsApp to pick up. */
-  sendRenewalReminders(withinDays = 7): RenewalReminder[] {
-    const due = this.renewalsDue(withinDays);
-    for (const reminder of due) {
-      this.bus.publish('applicant', reminder.applicantId, 'membership_renewal_due', {
-        membershipId: reminder.membership.id,
-        packageName: reminder.packageName,
-        daysRemaining: reminder.daysRemaining,
-        expiresAt: reminder.expiresAt,
-      });
-    }
-    return due;
   }
 }

@@ -2,73 +2,214 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Soko Huru jobs - swipe deck</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Jobs</title>
 <style>
-  :root { --ink:#10211a; --muted:#5b6f66; --line:#d8e4dd; --bg:#f4f8f5; --green:#0f7a4f; --red:#b3372b; --amber:#a86a10; }
-  * { box-sizing:border-box; }
+  :root { --ink:#10211a; --muted:#5b6f66; --line:#dde7e2; --bg:#f2f7f4; --green:#0f7a4f;
+          --red:#c0392b; --amber:#b8860b; --card:#fff; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   body { margin:0; font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; color:var(--ink);
-         background:var(--bg); display:flex; justify-content:center; padding:20px 16px 48px; }
-  .app { width:100%; max-width:440px; }
-  h1 { font-size:20px; margin:0 0 4px; }
-  .sub { color:var(--muted); font-size:13px; margin:0 0 18px; }
-  .panel { background:#fff; border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px; }
-  label { display:block; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:4px; }
-  input, select { width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:8px; font-size:14px; background:#fff; }
-  button { font:inherit; cursor:pointer; border-radius:8px; border:1px solid transparent; padding:10px 14px; font-weight:600; }
-  .primary { background:var(--green); color:#fff; width:100%; margin-top:10px; }
-  .card { background:#fff; border:1px solid var(--line); border-radius:16px; padding:22px; box-shadow:0 8px 24px rgba(16,33,26,.07); }
-  .card h2 { margin:0 0 2px; font-size:24px; }
-  .place { color:var(--muted); margin:0 0 12px; }
-  .salary { font-size:20px; font-weight:700; color:var(--green); margin:0 0 2px; }
-  .positions { color:var(--muted); font-size:14px; margin:0 0 14px; }
-  ul.highlights { list-style:none; padding:0; margin:0 0 16px; }
-  ul.highlights li { padding:5px 0 5px 20px; position:relative; font-size:14px; border-top:1px solid var(--line); }
-  ul.highlights li::before { content:"·"; position:absolute; left:6px; font-weight:700; color:var(--green); }
-  .match { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--muted); margin-bottom:6px; }
-  .bar { flex:1; height:6px; background:#e7f0ea; border-radius:3px; overflow:hidden; }
-  .bar span { display:block; height:100%; background:var(--green); }
-  .via { font-size:12px; color:var(--muted); border-top:1px solid var(--line); padding-top:10px; margin-top:4px; }
-  .actions { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-top:14px; }
-  .skip { background:#fff; border-color:var(--line); color:var(--red); }
-  .save { background:#fff; border-color:var(--line); color:var(--amber); }
-  .apply { background:var(--green); color:#fff; }
-  .notice { padding:12px 14px; border-radius:10px; font-size:14px; margin-bottom:14px; }
+         background:var(--bg); display:flex; justify-content:center; overscroll-behavior:none; }
+  .app { width:100%; max-width:430px; min-height:100vh; display:flex; flex-direction:column; }
+  header { padding:14px 16px 10px; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  header h1 { margin:0; font-size:19px; }
+  header small { color:var(--muted); font-size:12px; }
+  nav { display:flex; gap:6px; padding:0 16px 10px; }
+  nav button { flex:1; font:inherit; font-size:13px; font-weight:600; padding:8px; border-radius:999px;
+               border:1px solid var(--line); background:#fff; color:var(--muted); cursor:pointer; }
+  nav button.on { background:var(--green); border-color:var(--green); color:#fff; }
+  main { flex:1; padding:0 16px 24px; }
+  section[hidden] { display:none; }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; margin-bottom:14px; }
+  label { display:block; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:10px 0 4px; }
+  input, select, textarea { width:100%; padding:10px; border:1px solid var(--line); border-radius:10px; font:inherit; font-size:15px; background:#fff; }
+  button.primary { width:100%; font:inherit; font-weight:700; padding:12px; border-radius:10px; border:0;
+                   background:var(--green); color:#fff; cursor:pointer; margin-top:12px; }
+  button.link { background:none; border:0; color:var(--green); font:inherit; font-weight:600; cursor:pointer; padding:0; }
+
+  /* --- the deck ------------------------------------------------------- */
+  .deck { position:relative; height:min(70vh,560px); touch-action:none; }
+  .card { position:absolute; inset:0; background:var(--card); border:1px solid var(--line); border-radius:20px;
+          padding:22px; box-shadow:0 10px 30px rgba(16,33,26,.10); display:flex; flex-direction:column;
+          will-change:transform; cursor:grab; }
+  .card.dragging { cursor:grabbing; transition:none; }
+  .card.settle { transition:transform .25s ease, opacity .25s ease; }
+  .card h2 { margin:0 0 4px; font-size:26px; line-height:1.15; }
+  .card .place { color:var(--muted); margin:0 0 14px; font-size:15px; }
+  .card .pay { font-size:22px; font-weight:800; color:var(--green); margin:0; }
+  .card .count { color:var(--muted); font-size:14px; margin:2px 0 16px; }
+  .card ul { list-style:none; padding:0; margin:0; flex:1; overflow:auto; }
+  .card li { font-size:14px; padding:7px 0 7px 18px; border-top:1px solid var(--line); position:relative; }
+  .card li::before { content:"·"; position:absolute; left:5px; color:var(--green); font-weight:800; }
+  .card .via { font-size:12px; color:var(--muted); border-top:1px solid var(--line); padding-top:10px; margin-top:8px; }
+  .stamp { position:absolute; top:22px; font-size:20px; font-weight:800; letter-spacing:.08em; padding:6px 12px;
+           border:3px solid; border-radius:10px; opacity:0; pointer-events:none; }
+  .stamp.apply { right:22px; color:var(--green); border-color:var(--green); transform:rotate(12deg); }
+  .stamp.skip { left:22px; color:var(--red); border-color:var(--red); transform:rotate(-12deg); }
+  .stamp.save { left:50%; margin-left:-42px; color:var(--amber); border-color:var(--amber); }
+  .actions { display:flex; justify-content:center; gap:18px; padding:18px 0 6px; }
+  .actions button { width:62px; height:62px; border-radius:50%; border:1px solid var(--line); background:#fff;
+                    font-size:24px; cursor:pointer; box-shadow:0 3px 10px rgba(16,33,26,.08); }
+  .actions .go { width:70px; height:70px; font-size:28px; }
+  .empty { display:grid; place-items:center; height:100%; text-align:center; color:var(--muted); padding:24px; }
+
+  /* --- dialog --------------------------------------------------------- */
+  dialog { border:0; border-radius:16px; padding:22px; max-width:340px; width:calc(100% - 40px);
+           box-shadow:0 20px 60px rgba(0,0,0,.25); }
+  dialog::backdrop { background:rgba(16,33,26,.45); }
+  dialog h3 { margin:0 0 8px; font-size:19px; }
+  dialog p { margin:0 0 18px; color:var(--muted); font-size:15px; }
+  .dialog-actions { display:flex; gap:10px; }
+  .dialog-actions button { flex:1; font:inherit; font-weight:700; padding:11px; border-radius:10px; cursor:pointer; }
+  .cancel { background:#fff; border:1px solid var(--line); color:var(--ink); }
+  .confirm { background:var(--green); border:0; color:#fff; }
+
+  .notice { padding:12px 14px; border-radius:12px; font-size:14px; margin-bottom:12px; }
   .ok { background:#e6f4ec; border:1px solid #b7dfc8; }
-  .warn { background:#fdf1e3; border:1px solid #f0d3a8; }
+  .warn { background:#fdf3e3; border:1px solid #f0d9a8; }
   .err { background:#fbeae8; border:1px solid #f0c2bc; }
-  .empty { text-align:center; color:var(--muted); padding:36px 12px; }
-  dl { margin:0; font-size:14px; }
-  dt { color:var(--muted); font-size:12px; }
-  dd { margin:0 0 8px; }
-  .row { display:flex; justify-content:space-between; gap:12px; font-size:14px; padding:8px 0; border-top:1px solid var(--line); }
-  .tag { font-size:12px; padding:2px 8px; border-radius:999px; background:#e7f0ea; color:var(--green); }
+  .row { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; padding:11px 0; border-top:1px solid var(--line); font-size:14px; }
+  .row:first-child { border-top:0; }
+  .tag { font-size:12px; font-weight:600; padding:3px 10px; border-radius:999px; background:#e7f0ea; color:var(--green); white-space:nowrap; }
+  .steps { display:flex; gap:4px; margin-top:6px; }
+  .steps span { flex:1; height:4px; border-radius:2px; background:var(--line); }
+  .steps span.on { background:var(--green); }
+  .plan { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:11px 0; border-top:1px solid var(--line); }
+  .plan b { display:block; font-size:15px; }
+  .plan small { color:var(--muted); }
+  .detail h2 { margin:0 0 4px; }
+  .detail h4 { margin:16px 0 6px; font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  .detail img { width:100%; border-radius:12px; border:1px solid var(--line); margin-top:10px; }
 </style>
 </head>
 <body>
 <div class="app">
-  <h1>Soko Huru jobs</h1>
-  <p class="sub">Swipe right to apply. Your CV is attached automatically.</p>
+  <header>
+    <div><h1 id="greeting">Jobs</h1><small id="tenantLine"></small></div>
+    <button class="link" id="signOut" hidden>Sign out</button>
+  </header>
 
-  <div class="panel" id="signin">
-    <label for="token">Your app token from Soko Huru</label>
-    <input id="token" placeholder="paste the token you were given" autocomplete="off">
-    <label for="applicantId" style="margin-top:10px">Applicant ID</label>
-    <input id="applicantId" placeholder="app_..." autocomplete="off">
-    <button class="primary" id="signinBtn">Open my deck</button>
-  </div>
+  <nav id="tabs" hidden>
+    <button data-tab="deck" class="on">Jobs</button>
+    <button data-tab="applications">My applications</button>
+    <button data-tab="profile">Profile</button>
+  </nav>
 
-  <div id="status"></div>
-  <div id="membership" class="panel" hidden></div>
-  <div id="deck"></div>
-  <div id="tracker" class="panel" hidden></div>
+  <main>
+    <div id="status"></div>
+
+    <!-- registration / login ------------------------------------------ -->
+    <section id="auth">
+      <div class="panel">
+        <strong>Sign in</strong>
+        <label for="loginPhone">Phone number</label>
+        <input id="loginPhone" inputmode="tel" placeholder="+255 7xx xxx xxx">
+        <button class="primary" id="loginBtn">Continue</button>
+        <p style="text-align:center;margin:14px 0 0;font-size:14px">
+          New here? <button class="link" id="showRegister">Create an account</button>
+        </p>
+      </div>
+
+      <div class="panel" id="registerPanel" hidden>
+        <strong>Register</strong>
+        <label for="rName">Full name</label><input id="rName">
+        <label for="rPhone">Phone</label><input id="rPhone" inputmode="tel">
+        <label for="rEmail">Email (optional)</label><input id="rEmail" type="email">
+        <label for="rLocation">Where you live</label><input id="rLocation" placeholder="Dar es Salaam">
+        <label for="rCategory">Preferred job category</label>
+        <select id="rCategory">
+          <option value="hospitality">Hospitality</option>
+          <option value="customer_care">Customer care</option>
+          <option value="driving">Driving</option>
+          <option value="teaching">Teaching</option>
+          <option value="security">Security</option>
+          <option value="retail">Retail</option>
+          <option value="construction">Construction</option>
+          <option value="domestic">Domestic work</option>
+          <option value="healthcare">Healthcare</option>
+          <option value="it">IT</option>
+          <option value="finance">Finance</option>
+          <option value="sales">Sales</option>
+          <option value="other">Other</option>
+        </select>
+        <label for="rLocations">Preferred work locations</label>
+        <input id="rLocations" placeholder="Zanzibar, Dar es Salaam">
+        <label for="rSalary">Minimum salary (TSh per month)</label>
+        <input id="rSalary" inputmode="numeric" placeholder="500000">
+        <label for="rEducation">Education</label>
+        <select id="rEducation">
+          <option value="none">None</option><option value="primary">Primary</option>
+          <option value="secondary" selected>Secondary</option><option value="certificate">Certificate</option>
+          <option value="diploma">Diploma</option><option value="degree">Degree</option>
+          <option value="postgraduate">Postgraduate</option>
+        </select>
+        <label for="rExperience">Years of experience</label>
+        <input id="rExperience" inputmode="numeric" value="0">
+        <label for="rSkills">Skills</label><input id="rSkills" placeholder="Housekeeping, Guest relations">
+        <label for="rLanguages">Languages</label><input id="rLanguages" placeholder="English, Swahili">
+        <label><input type="checkbox" id="rRelocate" style="width:auto"> I can relocate for work</label>
+        <button class="primary" id="registerBtn">Create my account and CV</button>
+      </div>
+    </section>
+
+    <!-- deck ----------------------------------------------------------- -->
+    <section id="deck" hidden>
+      <div id="membershipBox"></div>
+      <div class="deck" id="deckArea"></div>
+      <div class="actions" id="deckActions" hidden>
+        <button id="btnSkip" title="Skip">✕</button>
+        <button id="btnSave" title="Save">★</button>
+        <button id="btnApply" class="go" title="Apply">♥</button>
+      </div>
+    </section>
+
+    <!-- applications --------------------------------------------------- -->
+    <section id="applications" hidden><div class="panel" id="applicationList"></div></section>
+
+    <!-- profile -------------------------------------------------------- -->
+    <section id="profile" hidden>
+      <div class="panel" id="profileBox"></div>
+      <div class="panel">
+        <strong>Filters</strong>
+        <label for="fCategories">Job categories</label><input id="fCategories" placeholder="hospitality, driving">
+        <label for="fLocations">Locations</label><input id="fLocations" placeholder="Zanzibar, Dar es Salaam">
+        <label for="fSalary">Minimum salary (TSh/month)</label><input id="fSalary" inputmode="numeric">
+        <label for="fCertificate">Certificate</label>
+        <select id="fCertificate">
+          <option value="">Show both</option>
+          <option value="false">Only jobs without certificates</option>
+          <option value="true">Only jobs requiring certificates</option>
+        </select>
+        <button class="primary" id="saveFilters">Save filters</button>
+      </div>
+      <div class="panel" id="cvBox"></div>
+    </section>
+  </main>
 </div>
+
+<dialog id="applyDialog">
+  <h3 id="applyTitle">Apply?</h3>
+  <p id="applyMessage">Your CV will be shared with this employer.</p>
+  <div class="dialog-actions">
+    <button class="cancel" id="applyCancel">Cancel</button>
+    <button class="confirm" id="applyConfirm">Apply</button>
+  </div>
+</dialog>
+
+<dialog id="detailDialog"><div class="detail" id="detailBody"></div>
+  <div class="dialog-actions" style="margin-top:18px"><button class="cancel" id="detailClose">Close</button></div>
+</dialog>
 
 <script>
 const $ = (id) => document.getElementById(id);
-let token = sessionStorage.getItem('kobeos_token') || '';
-let applicantId = sessionStorage.getItem('kobeos_applicant') || '';
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+const list = (v) => v.split(',').map((s) => s.trim()).filter(Boolean);
+
+let token = localStorage.getItem('kobeos_token') || '';
+let applicantId = localStorage.getItem('kobeos_applicant') || '';
 let cards = [];
+let pendingApply = null;
+let profileData = null;
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -80,144 +221,382 @@ async function api(path, options = {}) {
   return data;
 }
 
-function notice(kind, text) {
+function notice(kind, text, sticky = false) {
   $('status').innerHTML = `<div class="notice ${kind}">${text}</div>`;
+  if (!sticky) setTimeout(() => { $('status').innerHTML = ''; }, 6000);
 }
 
-function renderMembership(view) {
-  const box = $('membership');
-  box.hidden = false;
-  if (!view.membership || !view.active) {
-    box.innerHTML = `<strong>No active membership.</strong><p class="sub" style="margin:6px 0 0">
-      Pay for a Soko Huru package to apply. You can still browse.</p>`;
-    return;
-  }
-  const remaining = view.applicationsRemaining === null ? 'unlimited' : `${view.applicationsRemaining} left`;
-  box.innerHTML = `<div class="row" style="border:0;padding:0">
-      <span><span class="tag">${view.package?.name ?? ''}</span></span>
-      <span>${remaining} · ${view.daysRemaining ?? '-'} days</span>
-    </div>`;
-}
+// ---------------------------------------------------------------- the deck
 
-function renderCard() {
-  const deck = $('deck');
+function renderDeck() {
+  const area = $('deckArea');
   const card = cards[0];
   if (!card) {
-    deck.innerHTML = `<div class="panel empty">No more vacancies match your filters right now.<br>Check back later.</div>`;
+    area.innerHTML = `<div class="empty"><div><strong>No more jobs right now.</strong>
+      <p style="margin:8px 0 0">Widen your filters or check back later.</p></div></div>`;
+    $('deckActions').hidden = true;
     return;
   }
-  deck.innerHTML = `
-    <div class="card">
-      <h2>${escape(card.title)}</h2>
-      <p class="place">${escape(card.location)}</p>
-      <p class="salary">${escape(card.salaryLine)}</p>
-      <p class="positions">${escape(card.positionsLine)}</p>
-      <ul class="highlights">${card.highlights.map((h) => `<li>${escape(h)}</li>`).join('')}</ul>
-      <div class="match"><span>Match ${card.matchScore}%</span>
-        <span class="bar"><span style="width:${card.matchScore}%"></span></span></div>
-      <p class="via">${escape(card.postedThrough)}${card.sourceImagePath ? ' · original poster attached' : ''}</p>
-      <div class="actions">
-        <button class="skip" data-dir="left">Skip</button>
-        <button class="save" data-dir="up">Save</button>
-        <button class="apply" data-dir="right">Apply</button>
-      </div>
+  $('deckActions').hidden = false;
+  area.innerHTML = `
+    <div class="card" id="topCard">
+      <div class="stamp apply">APPLY</div>
+      <div class="stamp skip">SKIP</div>
+      <div class="stamp save">SAVE</div>
+      <h2>${esc(card.title)}</h2>
+      <p class="place">📍 ${esc(card.location)} · ${esc(card.employerName)}</p>
+      <p class="pay">💰 ${esc(card.salaryLine)}</p>
+      <p class="count">👥 ${esc(card.positionsLine)}</p>
+      <ul>${card.highlights.map((h) => `<li>${esc(h)}</li>`).join('')}</ul>
+      <p class="via">${esc(card.postedThrough)} · tap for full details</p>
     </div>`;
-  deck.querySelectorAll('button[data-dir]').forEach((button) => {
-    button.addEventListener('click', () => swipe(card.vacancyId, button.dataset.dir));
+  attachGestures($('topCard'), card);
+}
+
+/** Real finger swiping: drag the card, release past the threshold to act. */
+function attachGestures(element, card) {
+  let startX = 0, startY = 0, dx = 0, dy = 0, startedAt = 0, active = false;
+  const THRESHOLD = 95;
+
+  const paint = () => {
+    element.style.transform = `translate(${dx}px, ${dy}px) rotate(${dx / 22}deg)`;
+    element.querySelector('.stamp.apply').style.opacity = Math.max(0, Math.min(1, dx / THRESHOLD));
+    element.querySelector('.stamp.skip').style.opacity = Math.max(0, Math.min(1, -dx / THRESHOLD));
+    element.querySelector('.stamp.save').style.opacity =
+      Math.abs(dx) > 40 ? 0 : Math.max(0, Math.min(1, -dy / THRESHOLD));
+  };
+
+  element.addEventListener('pointerdown', (event) => {
+    active = true;
+    startedAt = Date.now();
+    startX = event.clientX;
+    startY = event.clientY;
+    element.classList.add('dragging');
+    element.classList.remove('settle');
+    element.setPointerCapture(event.pointerId);
   });
+
+  element.addEventListener('pointermove', (event) => {
+    if (!active) return;
+    dx = event.clientX - startX;
+    dy = event.clientY - startY;
+    paint();
+  });
+
+  const release = () => {
+    if (!active) return;
+    active = false;
+    element.classList.remove('dragging');
+    element.classList.add('settle');
+
+    const travelled = Math.hypot(dx, dy);
+    if (travelled < 10 && Date.now() - startedAt < 400) {
+      element.style.transform = '';
+      void openDetail(card.jobId);
+      return;
+    }
+    if (dx > THRESHOLD) return fly(element, card, 'right', `translate(${window.innerWidth}px, ${dy}px) rotate(25deg)`);
+    if (dx < -THRESHOLD) return fly(element, card, 'left', `translate(-${window.innerWidth}px, ${dy}px) rotate(-25deg)`);
+    if (dy < -THRESHOLD) return fly(element, card, 'up', `translate(${dx}px, -${window.innerHeight}px)`);
+    dx = 0; dy = 0;
+    paint();
+    element.style.transform = '';
+  };
+
+  element.addEventListener('pointerup', release);
+  element.addEventListener('pointercancel', release);
 }
 
-function escape(value) {
-  return String(value ?? '').replace(/[&<>"']/g, (ch) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+function fly(element, card, direction, transform) {
+  // A right swipe animates, then asks. Nothing is sent until Apply is pressed.
+  if (direction === 'right') {
+    element.style.transform = '';
+    element.querySelectorAll('.stamp').forEach((stamp) => { stamp.style.opacity = 0; });
+    return askToApply(card);
+  }
+  element.style.transform = transform;
+  element.style.opacity = '0';
+  setTimeout(() => void swipe(card.jobId, direction), 180);
 }
 
-async function swipe(vacancyId, direction) {
+async function swipe(jobId, direction, confirmed = false) {
   try {
     const outcome = await api(`/api/applicants/${applicantId}/swipes`, {
       method: 'POST',
-      body: JSON.stringify({ vacancyId, direction }),
+      body: JSON.stringify({ jobId, direction, confirmed }),
     });
+    if (outcome.result === 'confirm_required') { askToApplyFromPrompt(outcome.prompt); return; }
     if (outcome.result === 'applied') {
       const c = outcome.confirmation;
-      notice('ok', `<strong>${escape(c.message)}</strong><br>
-        Position: ${escape(c.position)}<br>Company: ${escape(c.company)}<br>
-        Submitted through: ${escape(c.submittedThrough)}<br>CV used: ${escape(c.cvUsed)}<br>
-        Application number: <strong>${escape(c.applicationNumber)}</strong><br>Status: ${escape(c.status)}`);
+      notice('ok', `<strong>${esc(c.message)}</strong><br>${esc(c.position)} · ${esc(c.company)}<br>
+        Application number <strong>${esc(c.applicationNumber)}</strong>`, true);
       cards.shift();
     } else if (outcome.result === 'blocked') {
-      const upgrade = outcome.upgradeTo ? ` Upgrade to ${escape(outcome.upgradeTo.name)} (TSh ${outcome.upgradeTo.priceTzs.toLocaleString()}).` : '';
-      notice('warn', escape(outcome.message) + upgrade);
+      const upgrade = outcome.upgradeTo
+        ? ` Buy the ${esc(outcome.upgradeTo.name)} package (TSh ${outcome.upgradeTo.priceTzs.toLocaleString()}).` : '';
+      notice('warn', esc(outcome.message) + upgrade, true);
       if (outcome.code === 'already_applied') cards.shift();
     } else {
-      notice('ok', outcome.result === 'saved' ? 'Saved for later.' : 'Skipped.');
       cards.shift();
     }
-    renderCard();
-    await refreshTracker();
+    renderDeck();
     if (cards.length === 0) await loadFeed();
+    await Promise.all([loadApplications(), loadMembership()]);
   } catch (error) {
-    notice('err', escape(error.message));
+    notice('err', esc(error.message));
+    renderDeck();
   }
 }
+
+function askToApply(card) {
+  askToApplyFromPrompt({ jobId: card.jobId, title: card.title, employerName: card.employerName,
+                         message: 'Your CV will be shared with this employer.' });
+}
+
+function askToApplyFromPrompt(prompt) {
+  pendingApply = prompt.jobId;
+  $('applyTitle').textContent = `Apply for ${prompt.title}?`;
+  $('applyMessage').textContent = prompt.message;
+  $('applyDialog').showModal();
+}
+
+$('applyCancel').addEventListener('click', () => { $('applyDialog').close(); pendingApply = null; renderDeck(); });
+$('applyConfirm').addEventListener('click', async () => {
+  $('applyDialog').close();
+  const jobId = pendingApply;
+  pendingApply = null;
+  if (jobId) await swipe(jobId, 'right', true);
+});
+
+$('btnSkip').addEventListener('click', () => cards[0] && swipe(cards[0].jobId, 'left'));
+$('btnSave').addEventListener('click', () => cards[0] && swipe(cards[0].jobId, 'up'));
+$('btnApply').addEventListener('click', () => cards[0] && askToApply(cards[0]));
+
+async function openDetail(jobId) {
+  try {
+    const detail = await api(`/api/applicants/${applicantId}/jobs/${jobId}`);
+    const job = detail.job;
+    $('detailBody').innerHTML = `
+      <h2>${esc(job.title)}</h2>
+      <p style="color:#5b6f66;margin:0">${esc(detail.employerName)} · ${esc(job.location)}</p>
+      <p style="font-weight:700;color:#0f7a4f;font-size:19px;margin:10px 0 0">${esc(detail.salaryLine)}</p>
+      <p style="color:#5b6f66;margin:2px 0 0">${detail.remainingPositions} position(s) open</p>
+      ${job.description ? `<h4>About the job</h4><p style="margin:0;white-space:pre-line">${esc(job.description)}</p>` : ''}
+      ${job.responsibilities.length ? `<h4>Responsibilities</h4><ul style="margin:0;padding-left:18px">${job.responsibilities.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}
+      ${job.requirements.length ? `<h4>Requirements</h4><ul style="margin:0;padding-left:18px">${job.requirements.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}
+      ${job.applicationDeadline ? `<h4>Deadline</h4><p style="margin:0">${esc(job.applicationDeadline)}</p>` : ''}
+      <h4>Posted through</h4><p style="margin:0">${esc(detail.postedThrough)}</p>
+      ${job.sourceImagePath ? `<h4>Original poster</h4><img src="${esc(job.sourceImagePath)}" alt="Original poster">` : ''}`;
+    $('detailDialog').showModal();
+  } catch (error) { notice('err', esc(error.message)); }
+}
+$('detailClose').addEventListener('click', () => $('detailDialog').close());
+
+// ------------------------------------------------------------ memberships
+
+async function loadMembership() {
+  const [view, plans] = await Promise.all([
+    api(`/api/applicants/${applicantId}/membership`),
+    fetch('/api/plans').then((r) => r.json()),
+  ]);
+  const box = $('membershipBox');
+  if (view.active) {
+    box.innerHTML = `<div class="notice ok"><strong>${esc(view.plan?.name ?? 'Membership')}</strong> ·
+      ${view.daysRemaining} days left</div>`;
+    return;
+  }
+  if (view.pendingPayment) {
+    box.innerHTML = `<div class="notice warn">Payment <strong>${esc(view.pendingPayment.reference)}</strong>
+      is waiting for the agency to confirm. You can browse while you wait.</div>`;
+    return;
+  }
+  box.innerHTML = `<div class="panel"><strong>Choose a membership to apply</strong>
+    ${plans.plans.map((plan) => `<div class="plan">
+        <span><b>${esc(plan.name)}</b><small>TSh ${plan.priceTzs.toLocaleString()} · ${plan.durationDays} days</small></span>
+        <button class="link" data-plan="${esc(plan.code)}">Pay</button></div>`).join('')}
+    <p style="font-size:13px;color:#5b6f66;margin:12px 0 0">Pay by mobile money, then enter the transaction
+      reference. The agency confirms it and your membership starts.</p></div>`;
+
+  box.querySelectorAll('button[data-plan]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const plan = plans.plans.find((entry) => entry.code === button.dataset.plan);
+      const reference = prompt(`Pay TSh ${plan.priceTzs.toLocaleString()} for ${plan.name}, then enter the transaction reference:`);
+      if (!reference) return;
+      try {
+        await api(`/api/applicants/${applicantId}/payments`, {
+          method: 'POST',
+          body: JSON.stringify({ planCode: plan.code, amountTzs: plan.priceTzs, reference }),
+        });
+        notice('ok', 'Payment submitted. The agency will confirm it shortly.');
+        await loadMembership();
+      } catch (error) { notice('err', esc(error.message)); }
+    });
+  });
+}
+
+// ----------------------------------------------------------- applications
+
+async function loadApplications() {
+  const data = await api(`/api/applicants/${applicantId}/applications`);
+  $('applicationList').innerHTML = data.applications.length === 0
+    ? '<p style="color:#5b6f66;margin:0">You have not applied for anything yet.</p>'
+    : data.applications.map((entry) => `
+        <div class="row"><span><strong>${esc(entry.jobTitle)}</strong><br>
+          <small style="color:#5b6f66">${esc(entry.employerName)} · ${esc(entry.reference)}<br>
+          Applied ${new Date(entry.appliedAt).toLocaleDateString()}</small>
+          <div class="steps">${[0,1,2,3].map((step) => `<span class="${entry.step >= step ? 'on' : ''}"></span>`).join('')}</div>
+          <small style="color:#5b6f66">${esc(entry.statusMessage)}</small>
+        </span><span class="tag">${esc(entry.statusLabel)}</span></div>`).join('');
+}
+
+// ---------------------------------------------------------------- profile
+
+function renderProfile() {
+  const { applicant, preferences, cv } = profileData;
+  $('profileBox').innerHTML = `<strong>${esc(applicant.fullName)}</strong>
+    <div class="row"><span>Phone</span><span>${esc(applicant.phone)}</span></div>
+    <div class="row"><span>Location</span><span>${esc(applicant.location)}</span></div>
+    <div class="row"><span>Experience</span><span>${applicant.experienceYears} year(s)</span></div>
+    <div class="row"><span>Education</span><span>${esc(applicant.educationLevel)}</span></div>`;
+  $('cvBox').innerHTML = `<strong>Your CV</strong>
+    <p style="font-size:13px;color:#5b6f66;margin:6px 0 10px">Written for you from your profile and sent
+      automatically when you apply.</p>
+    <pre style="white-space:pre-wrap;font:13px/1.5 ui-monospace,monospace;margin:0">${esc(cvText)}</pre>`;
+  $('fCategories').value = preferences.categories.join(', ');
+  $('fLocations').value = preferences.locations.join(', ');
+  $('fSalary').value = preferences.minSalaryTzs ?? '';
+  $('fCertificate').value = preferences.certificateRequired === null ? '' : String(preferences.certificateRequired);
+  void cv;
+}
+
+let cvText = '';
+
+$('saveFilters').addEventListener('click', async () => {
+  try {
+    await api(`/api/applicants/${applicantId}/preferences`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        categories: list($('fCategories').value),
+        locations: list($('fLocations').value),
+        minSalaryTzs: $('fSalary').value ? Number($('fSalary').value) : null,
+        certificateRequired: $('fCertificate').value === '' ? null : $('fCertificate').value === 'true',
+      }),
+    });
+    notice('ok', 'Filters saved.');
+    await loadFeed();
+  } catch (error) { notice('err', esc(error.message)); }
+});
+
+// ------------------------------------------------------------------ shell
 
 async function loadFeed() {
   const data = await api(`/api/applicants/${applicantId}/feed`);
   cards = data.cards;
-  renderCard();
+  renderDeck();
 }
 
-async function refreshTracker() {
-  const data = await api(`/api/applicants/${applicantId}/applications`);
-  const box = $('tracker');
-  if (data.applications.length === 0) { box.hidden = true; return; }
-  box.hidden = false;
-  box.innerHTML = `<strong>My applications</strong>` + data.applications.map((entry) => `
-    <div class="row"><span>${escape(entry.vacancyTitle)}<br>
-      <small style="color:#5b6f66">${escape(entry.employerName)} · ${escape(entry.reference)}</small></span>
-      <span class="tag">${escape(entry.statusLabel)}</span></div>`).join('');
+function showTab(name) {
+  for (const id of ['deck', 'applications', 'profile']) $(id).hidden = id !== name;
+  document.querySelectorAll('#tabs button').forEach((button) => {
+    button.classList.toggle('on', button.dataset.tab === name);
+  });
 }
-
-async function start() {
-  try {
-    $('signin').hidden = true;
-    const profile = await api(`/api/applicants/${applicantId}`);
-    renderMembership(profile.membership);
-    await loadFeed();
-    await refreshTracker();
-    listen();
-  } catch (error) {
-    $('signin').hidden = false;
-    notice('err', escape(error.message));
-  }
-}
+document.querySelectorAll('#tabs button').forEach((button) => {
+  button.addEventListener('click', () => showTab(button.dataset.tab));
+});
 
 function listen() {
   const source = new EventSource(`/api/applicants/${applicantId}/stream?token=${encodeURIComponent(token)}`);
   source.addEventListener('application_status_changed', (event) => {
     const payload = JSON.parse(event.data);
-    notice('ok', `Your application ${escape(payload.reference)} is now ${escape(payload.statusLabel)}.`);
-    void refreshTracker();
+    notice('ok', `<strong>${esc(payload.statusLabel)}</strong> — ${esc(payload.message)}`, true);
+    void loadApplications();
   });
-  source.addEventListener('interview_scheduled', (event) => {
-    const payload = JSON.parse(event.data);
-    notice('ok', `Interview scheduled for application ${escape(payload.reference)}.`);
+  source.addEventListener('membership_activated', () => {
+    notice('ok', 'Your membership is active. You can apply now.');
+    void loadMembership();
+  });
+  source.addEventListener('payment_rejected', (event) => {
+    notice('err', `Payment ${esc(JSON.parse(event.data).reference)} was not accepted.`, true);
   });
 }
 
-$('signinBtn').addEventListener('click', () => {
-  token = $('token').value.trim();
-  applicantId = $('applicantId').value.trim();
-  if (!token || !applicantId) { notice('err', 'Enter both the token and your applicant ID.'); return; }
-  sessionStorage.setItem('kobeos_token', token);
-  sessionStorage.setItem('kobeos_applicant', applicantId);
-  void start();
+async function start() {
+  $('auth').hidden = true;
+  $('tabs').hidden = false;
+  $('signOut').hidden = false;
+  const [profile, plans, cv] = await Promise.all([
+    api(`/api/applicants/${applicantId}`),
+    fetch('/api/plans').then((r) => r.json()),
+    api(`/api/applicants/${applicantId}/cv`),
+  ]);
+  profileData = profile;
+  cvText = cv.text;
+  $('greeting').textContent = profile.applicant.fullName.split(' ')[0];
+  $('tenantLine').textContent = `Jobs through ${plans.tenant}`;
+  renderProfile();
+  showTab('deck');
+  await Promise.all([loadMembership(), loadFeed(), loadApplications()]);
+  listen();
+}
+
+function saveSession(session, id) {
+  token = session.token;
+  applicantId = id;
+  localStorage.setItem('kobeos_token', token);
+  localStorage.setItem('kobeos_applicant', applicantId);
+}
+
+$('showRegister').addEventListener('click', () => { $('registerPanel').hidden = !$('registerPanel').hidden; });
+
+$('loginBtn').addEventListener('click', async () => {
+  try {
+    const result = await fetch('/api/applicants/login', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ phone: $('loginPhone').value.trim() }),
+    }).then(async (r) => { const d = await r.json(); if (!r.ok) throw new Error(d?.error?.message); return d; });
+    saveSession(result.session, result.applicantId);
+    await start();
+  } catch (error) { notice('err', esc(error.message || 'Could not sign in.')); }
+});
+
+$('registerBtn').addEventListener('click', async () => {
+  try {
+    const result = await fetch('/api/applicants/register', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        fullName: $('rName').value.trim(),
+        phone: $('rPhone').value.trim(),
+        email: $('rEmail').value.trim() || null,
+        location: $('rLocation').value.trim(),
+        categories: [$('rCategory').value],
+        preferredLocations: list($('rLocations').value),
+        minSalaryTzs: $('rSalary').value ? Number($('rSalary').value) : null,
+        educationLevel: $('rEducation').value,
+        experienceYears: Number($('rExperience').value || 0),
+        skills: list($('rSkills').value),
+        languages: list($('rLanguages').value),
+        willingToRelocate: $('rRelocate').checked,
+      }),
+    }).then(async (r) => { const d = await r.json(); if (!r.ok) throw new Error(d?.error?.message); return d; });
+    saveSession(result.session, result.applicant.id);
+    await start();
+    notice('ok', 'Account created. KobeOS has written your CV.');
+  } catch (error) { notice('err', esc(error.message || 'Could not register.')); }
+});
+
+$('signOut').addEventListener('click', () => {
+  localStorage.removeItem('kobeos_token');
+  localStorage.removeItem('kobeos_applicant');
+  location.reload();
 });
 
 if (token && applicantId) {
-  $('token').value = token;
-  $('applicantId').value = applicantId;
-  void start();
+  start().catch(() => {
+    localStorage.removeItem('kobeos_token');
+    localStorage.removeItem('kobeos_applicant');
+    $('auth').hidden = false;
+  });
 }
 </script>
 </body>

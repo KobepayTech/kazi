@@ -1,47 +1,55 @@
-import type { ApplicationDetail, EmployerApplicationFilters, Store } from '../data/store.ts';
-import { STATUS_LABELS, assertTransition } from '../domain/applications.ts';
+import type { ApplicationDetail, ApplicationFilters, TenantStore } from '../data/store.ts';
+import { STATUS_LABELS, STATUS_MESSAGES, assertTransition } from '../domain/applications.ts';
+import { renderCvText } from '../domain/cv.ts';
+import { relocationNote } from '../domain/feed.ts';
 import type {
   Actor,
   Application,
-  ApplicationEvent,
   ApplicationStatus,
+  ApplicationStatusChange,
   Employer,
-  Vacancy,
-  VacancyStats,
+  Job,
+  JobStats,
 } from '../domain/types.ts';
 import { AppError } from './errors.ts';
 import { AGENCY_SCOPE_ID, EventBus } from './events.ts';
 
 export type EmployerDashboard = {
   employer: Employer;
-  portalUrl: string | null;
-  vacancies: VacancyStats[];
+  jobs: JobStats[];
   totals: {
     positions: number;
     applications: number;
     newApplications: number;
+    viewed: number;
     shortlisted: number;
-    interviewInvited: number;
+    interview: number;
     hired: number;
     remainingPositions: number;
   };
 };
 
-export type ApplicationSummary = ApplicationDetail & { statusLabel: string };
+export type CandidateCard = ApplicationDetail & {
+  statusLabel: string;
+  /** "Ready to relocate", shown under the candidate's location. */
+  relocation: string | null;
+};
 
-export type ApplicationDossier = ApplicationSummary & { history: ApplicationEvent[] };
+export type CandidateDossier = CandidateCard & {
+  history: ApplicationStatusChange[];
+  cvText: string;
+};
 
 /**
- * Everything the automatically generated employer recruitment page can do.
- * Every method takes the employer id the caller is authenticated as, and every
- * lookup is checked against it, so one client can never reach another's
- * applicants even with a guessed id.
+ * The employer's private page. Every method takes the employer id the caller
+ * is signed in as and checks it, so one client can never reach another's
+ * candidates even with a guessed id.
  */
 export class EmployerService {
-  private readonly store: Store;
+  private readonly store: TenantStore;
   private readonly bus: EventBus;
 
-  constructor(store: Store, bus: EventBus) {
+  constructor(store: TenantStore, bus: EventBus) {
     this.store = store;
     this.bus = bus;
   }
@@ -49,33 +57,40 @@ export class EmployerService {
   dashboard(employerId: string): EmployerDashboard {
     const employer = this.store.getEmployer(employerId);
     if (employer === null) throw AppError.notFound('Employer not found.');
-    const vacancies = this.store.employerStats(employerId);
-    const totals = vacancies.reduce(
+    const jobs = this.store.employerStats(employerId);
+    const totals = jobs.reduce(
       (sum, stats) => ({
         positions: sum.positions + stats.positions,
         applications: sum.applications + stats.applications,
         newApplications: sum.newApplications + stats.newApplications,
+        viewed: sum.viewed + stats.viewed,
         shortlisted: sum.shortlisted + stats.shortlisted,
-        interviewInvited: sum.interviewInvited + stats.interviewInvited,
+        interview: sum.interview + stats.interview,
         hired: sum.hired + stats.hired,
         remainingPositions: sum.remainingPositions + stats.remainingPositions,
       }),
-      { positions: 0, applications: 0, newApplications: 0, shortlisted: 0, interviewInvited: 0, hired: 0, remainingPositions: 0 },
+      { positions: 0, applications: 0, newApplications: 0, viewed: 0, shortlisted: 0, interview: 0, hired: 0, remainingPositions: 0 },
     );
-    return { employer, portalUrl: this.store.getPortalUrl(employerId), vacancies, totals };
+    return { employer, jobs, totals };
   }
 
-  vacancy(employerId: string, vacancyId: string): Vacancy {
-    const vacancy = this.store.getVacancy(vacancyId);
-    if (vacancy === null || vacancy.employerId !== employerId) throw AppError.notFound('Vacancy not found.');
-    return vacancy;
+  job(employerId: string, jobId: string): Job {
+    const job = this.store.getJob(jobId);
+    if (job === null || job.employerId !== employerId) throw AppError.notFound('Job not found.');
+    return job;
   }
 
-  applications(employerId: string, filters: EmployerApplicationFilters = {}): ApplicationSummary[] {
-    return this.store.listApplicationsForEmployer(employerId, filters).map((detail) => ({
+  candidates(employerId: string, filters: ApplicationFilters = {}): CandidateCard[] {
+    return this.store.listApplicationsForEmployer(employerId, filters).map((detail) => this.decorate(detail));
+  }
+
+  private decorate(detail: ApplicationDetail): CandidateCard {
+    const job = this.store.getJob(detail.application.jobId);
+    return {
       ...detail,
       statusLabel: STATUS_LABELS[detail.application.status],
-    }));
+      relocation: job === null ? null : relocationNote(detail.applicant, job),
+    };
   }
 
   private requireApplication(employerId: string, applicationId: string): Application {
@@ -86,30 +101,24 @@ export class EmployerService {
     return application;
   }
 
-  /** Opening a candidate marks them Viewed, which is what moves the tile. */
-  openApplication(employerId: string, applicationId: string, actor: Actor): ApplicationDossier {
+  /** Opening a CV marks the candidate Viewed, which is what moves the tile. */
+  openCandidate(employerId: string, applicationId: string, actor: Actor): CandidateDossier {
     const application = this.requireApplication(employerId, applicationId);
     if (application.status === 'applied') {
       this.transition(employerId, applicationId, 'viewed', actor, null);
     }
-    const detail = this.findDetail(employerId, applicationId);
+    const [detail] = this.store.listApplicationsForEmployer(employerId, { applicationId, limit: 1 });
+    if (detail === undefined) throw AppError.notFound('Application not found.');
     return {
-      ...detail,
-      statusLabel: STATUS_LABELS[detail.application.status],
-      history: this.store.listApplicationEvents(applicationId),
+      ...this.decorate(detail),
+      history: this.store.listStatusHistory(applicationId),
+      cvText: renderCvText(detail.cv),
     };
   }
 
-  private findDetail(employerId: string, applicationId: string): ApplicationDetail {
-    const [detail] = this.store.listApplicationsForEmployer(employerId, { applicationId, limit: 1 });
-    if (detail === undefined) throw AppError.notFound('Application not found.');
-    return detail;
-  }
-
   /**
-   * Moves an application along the status flow. The transition rules live in
-   * the domain, so the employer page, the agency console and the API all
-   * enforce exactly the same flow.
+   * Moves a candidate along the flow. The rules live in the domain, so the
+   * employer page and the agency console enforce exactly the same steps.
    */
   transition(
     employerId: string,
@@ -123,15 +132,15 @@ export class EmployerService {
 
     const updated = this.store.transaction(() => {
       this.store.updateApplicationStatus(applicationId, to);
-      this.store.addApplicationEvent(applicationId, application.status, to, actor, note);
+      this.store.addStatusChange(applicationId, application.status, to, actor, note);
       const next = this.store.getApplication(applicationId);
       if (next === null) throw AppError.notFound('Application not found.');
 
-      // Closing the last position closes the vacancy for everybody.
+      // Filling the last position closes the job for everybody.
       if (to === 'hired') {
-        const vacancy = this.store.getVacancy(next.vacancyId);
-        if (vacancy !== null && this.store.countHired(vacancy.id) >= vacancy.positions) {
-          this.store.setVacancyStatus(vacancy.id, 'filled');
+        const job = this.store.getJob(next.jobId);
+        if (job !== null && this.store.countHired(job.id) >= job.positions) {
+          this.store.setJobStatus(job.id, 'filled');
         }
       }
       return next;
@@ -140,23 +149,29 @@ export class EmployerService {
     const payload = {
       applicationId,
       reference: updated.reference,
-      vacancyId: updated.vacancyId,
+      jobId: updated.jobId,
       employerId,
       applicantId: updated.applicantId,
       fromStatus: application.status,
       status: to,
       statusLabel: STATUS_LABELS[to],
+      message: STATUS_MESSAGES[to],
       by: actor.kind,
       note,
     };
     this.bus.publish('employer', employerId, 'application_status_changed', payload);
     this.bus.publish('agency', AGENCY_SCOPE_ID, 'application_status_changed', payload);
+    // This is what makes the applicant's phone update the moment Shortlist is pressed.
     this.bus.publish('applicant', updated.applicantId, 'application_status_changed', payload);
     return updated;
   }
 
   shortlist(employerId: string, applicationId: string, actor: Actor, note: string | null = null): Application {
     return this.transition(employerId, applicationId, 'shortlisted', actor, note);
+  }
+
+  inviteToInterview(employerId: string, applicationId: string, actor: Actor, note: string | null = null): Application {
+    return this.transition(employerId, applicationId, 'interview', actor, note);
   }
 
   reject(employerId: string, applicationId: string, actor: Actor, note: string | null = null): Application {
@@ -167,25 +182,6 @@ export class EmployerService {
     return this.transition(employerId, applicationId, 'hired', actor, note);
   }
 
-  inviteToInterview(
-    employerId: string,
-    applicationId: string,
-    interviewAt: string | null,
-    actor: Actor,
-    note: string | null = null,
-  ): Application {
-    const application = this.transition(employerId, applicationId, 'interview_invited', actor, note);
-    if (interviewAt !== null) {
-      this.store.setInterviewAt(applicationId, interviewAt);
-      this.bus.publish('applicant', application.applicantId, 'interview_scheduled', {
-        applicationId,
-        reference: application.reference,
-        interviewAt,
-      });
-    }
-    return this.store.getApplication(applicationId) ?? application;
-  }
-
   addNote(employerId: string, applicationId: string, note: string): Application {
     this.requireApplication(employerId, applicationId);
     this.store.setApplicationNotes(applicationId, note);
@@ -194,27 +190,14 @@ export class EmployerService {
     return updated;
   }
 
-  closeVacancy(employerId: string, vacancyId: string, actor: Actor): Vacancy {
-    const vacancy = this.vacancy(employerId, vacancyId);
-    this.store.setVacancyStatus(vacancyId, 'closed');
-    const payload = { vacancyId, employerId, title: vacancy.title, by: actor.kind };
-    this.bus.publish('employer', employerId, 'vacancy_closed', payload);
-    this.bus.publish('agency', AGENCY_SCOPE_ID, 'vacancy_closed', payload);
-    const updated = this.store.getVacancy(vacancyId);
-    if (updated === null) throw AppError.notFound('Vacancy not found.');
+  closeJob(employerId: string, jobId: string, actor: Actor): Job {
+    const job = this.job(employerId, jobId);
+    this.store.setJobStatus(jobId, 'closed');
+    const payload = { jobId, employerId, title: job.title, by: actor.kind };
+    this.bus.publish('employer', employerId, 'job_closed', payload);
+    this.bus.publish('agency', AGENCY_SCOPE_ID, 'job_closed', payload);
+    const updated = this.store.getJob(jobId);
+    if (updated === null) throw AppError.notFound('Job not found.');
     return updated;
-  }
-
-  /** "Request more candidates" lands on the Soko Huru dashboard as a task. */
-  requestMoreCandidates(employerId: string, vacancyId: string, message: string | null): void {
-    const vacancy = this.vacancy(employerId, vacancyId);
-    const employer = this.store.getEmployer(employerId);
-    this.bus.publish('agency', AGENCY_SCOPE_ID, 'more_candidates_requested', {
-      employerId,
-      employerName: employer?.name ?? employerId,
-      vacancyId,
-      vacancyTitle: vacancy.title,
-      message,
-    });
   }
 }

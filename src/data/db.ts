@@ -2,33 +2,130 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
+/**
+ * Every business table carries tenant_id. KobeOS is the platform and the
+ * agency is the tenant, so a second agency is a row here, not a fork.
+ */
 export const SCHEMA = `
-CREATE TABLE IF NOT EXISTS agency_staff (
-  id TEXT PRIMARY KEY,
-  full_name TEXT NOT NULL,
-  email TEXT NOT NULL UNIQUE,
-  role TEXT NOT NULL DEFAULT 'officer',
-  password_hash TEXT,
-  created_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS employers (
+CREATE TABLE IF NOT EXISTS tenants (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   slug TEXT NOT NULL UNIQUE,
-  industry TEXT,
-  location TEXT,
-  contact_name TEXT,
-  contact_phone TEXT,
-  contact_email TEXT,
-  portal_url TEXT,
-  portal_created_at TEXT,
-  last_seen_at TEXT,
+  api_key_hash TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  role TEXT NOT NULL,
+  full_name TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  email TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE (tenant_id, phone)
+);
+CREATE INDEX IF NOT EXISTS idx_users_tenant ON users(tenant_id, role);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  subject_kind TEXT NOT NULL,
+  subject_id TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_subject ON sessions(subject_kind, subject_id);
+
+CREATE TABLE IF NOT EXISTS applicant_profiles (
+  applicant_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  location TEXT NOT NULL,
+  education_level TEXT NOT NULL DEFAULT 'none',
+  experience_years INTEGER NOT NULL DEFAULT 0,
+  skills_json TEXT NOT NULL DEFAULT '[]',
+  languages_json TEXT NOT NULL DEFAULT '[]',
+  photo_path TEXT,
+  willing_to_relocate INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_profiles_tenant ON applicant_profiles(tenant_id);
+
+CREATE TABLE IF NOT EXISTS applicant_preferences (
+  applicant_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  categories_json TEXT NOT NULL DEFAULT '[]',
+  locations_json TEXT NOT NULL DEFAULT '[]',
+  min_salary_tzs INTEGER,
+  certificate_required INTEGER,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS cvs (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  applicant_id TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  document_json TEXT NOT NULL,
+  generated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS membership_plans (
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  code TEXT NOT NULL,
+  name TEXT NOT NULL,
+  price_tzs INTEGER NOT NULL,
+  duration_days INTEGER NOT NULL,
+  covers_non_certificate_jobs INTEGER NOT NULL DEFAULT 1,
+  covers_certificate_jobs INTEGER NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY (tenant_id, code)
+);
+
+CREATE TABLE IF NOT EXISTS memberships (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  applicant_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  plan_code TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending_payment',
+  activated_at TEXT,
+  expires_at TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_memberships_applicant ON memberships(applicant_id, status);
+
+CREATE TABLE IF NOT EXISTS payments (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  applicant_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  membership_id TEXT NOT NULL REFERENCES memberships(id) ON DELETE CASCADE,
+  amount_tzs INTEGER NOT NULL,
+  reference TEXT NOT NULL,
+  method TEXT NOT NULL DEFAULT 'mobile_money',
+  status TEXT NOT NULL DEFAULT 'submitted',
+  note TEXT,
+  submitted_at TEXT NOT NULL,
+  reviewed_at TEXT,
+  reviewed_by TEXT,
+  UNIQUE (tenant_id, reference)
+);
+CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(tenant_id, status, submitted_at);
+
+CREATE TABLE IF NOT EXISTS employers (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  access_code TEXT NOT NULL UNIQUE,
+  contact_name TEXT,
+  contact_phone TEXT,
+  contact_email TEXT,
+  last_seen_at TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_employers_tenant ON employers(tenant_id, name);
+
 CREATE TABLE IF NOT EXISTS employer_access_grants (
   id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   employer_id TEXT NOT NULL REFERENCES employers(id) ON DELETE CASCADE,
   kind TEXT NOT NULL,
   secret_hash TEXT NOT NULL,
@@ -40,22 +137,9 @@ CREATE TABLE IF NOT EXISTS employer_access_grants (
 );
 CREATE INDEX IF NOT EXISTS idx_grants_employer ON employer_access_grants(employer_id, kind);
 
-CREATE TABLE IF NOT EXISTS employer_sessions (
-  token_hash TEXT PRIMARY KEY,
-  employer_id TEXT NOT NULL REFERENCES employers(id) ON DELETE CASCADE,
-  expires_at TEXT NOT NULL,
-  created_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS applicant_sessions (
-  token_hash TEXT PRIMARY KEY,
-  applicant_id TEXT NOT NULL REFERENCES applicants(id) ON DELETE CASCADE,
-  expires_at TEXT NOT NULL,
-  created_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS vacancy_drafts (
+CREATE TABLE IF NOT EXISTS job_drafts (
   id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   employer_id TEXT REFERENCES employers(id) ON DELETE SET NULL,
   employer_name_guess TEXT,
   intake_channel TEXT NOT NULL,
@@ -64,18 +148,18 @@ CREATE TABLE IF NOT EXISTS vacancy_drafts (
   extraction_json TEXT NOT NULL,
   overrides_json TEXT,
   status TEXT NOT NULL DEFAULT 'extracted',
-  vacancy_id TEXT REFERENCES vacancies(id) ON DELETE SET NULL,
+  job_id TEXT,
   created_by TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_drafts_status ON vacancy_drafts(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_drafts_status ON job_drafts(tenant_id, status, created_at DESC);
 
-CREATE TABLE IF NOT EXISTS vacancies (
+CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   employer_id TEXT NOT NULL REFERENCES employers(id) ON DELETE CASCADE,
-  agency_ref TEXT NOT NULL,
-  slug TEXT NOT NULL,
+  reference TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'draft',
   title TEXT NOT NULL,
   location TEXT NOT NULL,
@@ -87,134 +171,48 @@ CREATE TABLE IF NOT EXISTS vacancies (
   salary_period TEXT NOT NULL DEFAULT 'month',
   salary_plus_tips INTEGER NOT NULL DEFAULT 0,
   salary_monthly_tzs INTEGER,
+  description TEXT,
+  responsibilities_json TEXT NOT NULL DEFAULT '[]',
+  requirements_json TEXT NOT NULL DEFAULT '[]',
+  application_deadline TEXT,
+  contact_info TEXT,
   accommodation_provided INTEGER NOT NULL DEFAULT 0,
-  meals_provided INTEGER NOT NULL DEFAULT 0,
-  transport_provided INTEGER NOT NULL DEFAULT 0,
-  employment_type TEXT NOT NULL DEFAULT 'full_time',
-  work_mode TEXT NOT NULL DEFAULT 'onsite',
-  gender_requirement TEXT NOT NULL DEFAULT 'any',
-  age_min INTEGER,
-  age_max INTEGER,
   languages_json TEXT NOT NULL DEFAULT '[]',
-  experience_years_min INTEGER NOT NULL DEFAULT 0,
   experience_note TEXT,
-  education_min TEXT NOT NULL DEFAULT 'none',
   certificate_required INTEGER NOT NULL DEFAULT 0,
   immediate_start INTEGER NOT NULL DEFAULT 0,
-  start_date TEXT,
-  application_deadline TEXT,
-  description TEXT,
   source_image_path TEXT,
   source_text TEXT,
   intake_channel TEXT NOT NULL DEFAULT 'manual_entry',
   published_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  UNIQUE (employer_id, slug)
+  UNIQUE (tenant_id, reference)
 );
-CREATE INDEX IF NOT EXISTS idx_vacancies_status ON vacancies(status, published_at DESC);
-CREATE INDEX IF NOT EXISTS idx_vacancies_employer ON vacancies(employer_id, status);
-
-CREATE TABLE IF NOT EXISTS applicants (
-  id TEXT PRIMARY KEY,
-  full_name TEXT NOT NULL,
-  phone TEXT NOT NULL UNIQUE,
-  email TEXT,
-  location TEXT NOT NULL,
-  gender TEXT NOT NULL DEFAULT 'undisclosed',
-  date_of_birth TEXT,
-  education_level TEXT NOT NULL DEFAULT 'none',
-  languages_json TEXT NOT NULL DEFAULT '[]',
-  willing_to_relocate INTEGER NOT NULL DEFAULT 0,
-  available_from TEXT,
-  soko_huru_verified INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS cvs (
-  id TEXT PRIMARY KEY,
-  applicant_id TEXT NOT NULL REFERENCES applicants(id) ON DELETE CASCADE,
-  label TEXT NOT NULL,
-  categories_json TEXT NOT NULL DEFAULT '[]',
-  headline TEXT,
-  experience_years INTEGER NOT NULL DEFAULT 0,
-  education_level TEXT NOT NULL DEFAULT 'none',
-  skills_json TEXT NOT NULL DEFAULT '[]',
-  languages_json TEXT NOT NULL DEFAULT '[]',
-  certificates_json TEXT NOT NULL DEFAULT '[]',
-  preferred_salary_tzs INTEGER,
-  file_path TEXT,
-  is_default INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_cvs_applicant ON cvs(applicant_id);
-
-CREATE TABLE IF NOT EXISTS applicant_preferences (
-  applicant_id TEXT PRIMARY KEY REFERENCES applicants(id) ON DELETE CASCADE,
-  locations_json TEXT NOT NULL DEFAULT '[]',
-  categories_json TEXT NOT NULL DEFAULT '[]',
-  min_salary_tzs INTEGER,
-  max_salary_tzs INTEGER,
-  certificate_required INTEGER,
-  education_level_max TEXT,
-  experience_years_max INTEGER,
-  accommodation_required_outside_home INTEGER NOT NULL DEFAULT 0,
-  employment_types_json TEXT NOT NULL DEFAULT '[]',
-  work_modes_json TEXT NOT NULL DEFAULT '[]',
-  willing_to_relocate INTEGER NOT NULL DEFAULT 0,
-  gender_neutral_only INTEGER NOT NULL DEFAULT 0,
-  immediate_start_only INTEGER NOT NULL DEFAULT 0,
-  updated_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS membership_packages (
-  code TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  price_tzs INTEGER NOT NULL,
-  duration_days INTEGER NOT NULL,
-  covers_non_certificate_jobs INTEGER NOT NULL DEFAULT 1,
-  covers_certificate_jobs INTEGER NOT NULL DEFAULT 0,
-  application_limit INTEGER,
-  categories_json TEXT,
-  priority_review INTEGER NOT NULL DEFAULT 0,
-  active INTEGER NOT NULL DEFAULT 1
-);
-
-CREATE TABLE IF NOT EXISTS memberships (
-  id TEXT PRIMARY KEY,
-  applicant_id TEXT NOT NULL REFERENCES applicants(id) ON DELETE CASCADE,
-  package_code TEXT NOT NULL REFERENCES membership_packages(code),
-  status TEXT NOT NULL DEFAULT 'pending_payment',
-  paid_amount_tzs INTEGER,
-  payment_reference TEXT,
-  activated_at TEXT,
-  expires_at TEXT,
-  applications_used INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_memberships_applicant ON memberships(applicant_id, status);
+CREATE INDEX IF NOT EXISTS idx_jobs_feed ON jobs(tenant_id, status, published_at DESC);
+CREATE INDEX IF NOT EXISTS idx_jobs_employer ON jobs(employer_id, status);
 
 CREATE TABLE IF NOT EXISTS applications (
   id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   reference TEXT NOT NULL UNIQUE,
-  vacancy_id TEXT NOT NULL REFERENCES vacancies(id) ON DELETE CASCADE,
-  applicant_id TEXT NOT NULL REFERENCES applicants(id) ON DELETE CASCADE,
+  job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  applicant_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   cv_id TEXT NOT NULL REFERENCES cvs(id),
   employer_id TEXT NOT NULL REFERENCES employers(id) ON DELETE CASCADE,
   status TEXT NOT NULL DEFAULT 'applied',
-  match_score INTEGER NOT NULL DEFAULT 0,
   employer_notes TEXT,
-  interview_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  UNIQUE (vacancy_id, applicant_id)
+  UNIQUE (job_id, applicant_id)
 );
-CREATE INDEX IF NOT EXISTS idx_applications_vacancy ON applications(vacancy_id, status);
+CREATE INDEX IF NOT EXISTS idx_applications_job ON applications(job_id, status);
 CREATE INDEX IF NOT EXISTS idx_applications_employer ON applications(employer_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_applications_applicant ON applications(applicant_id, created_at DESC);
 
-CREATE TABLE IF NOT EXISTS application_events (
+CREATE TABLE IF NOT EXISTS application_status_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   application_id TEXT NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
   from_status TEXT,
   to_status TEXT NOT NULL,
@@ -223,24 +221,29 @@ CREATE TABLE IF NOT EXISTS application_events (
   note TEXT,
   created_at TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_application_events ON application_events(application_id, id);
+CREATE INDEX IF NOT EXISTS idx_status_history ON application_status_history(application_id, id);
 
 CREATE TABLE IF NOT EXISTS swipes (
   id TEXT PRIMARY KEY,
-  applicant_id TEXT NOT NULL REFERENCES applicants(id) ON DELETE CASCADE,
-  vacancy_id TEXT NOT NULL REFERENCES vacancies(id) ON DELETE CASCADE,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  applicant_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
   direction TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  UNIQUE (applicant_id, vacancy_id)
+  UNIQUE (applicant_id, job_id)
 );
 
 CREATE TABLE IF NOT EXISTS reference_counters (
-  year INTEGER PRIMARY KEY,
-  next_value INTEGER NOT NULL
+  tenant_id TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  year INTEGER NOT NULL,
+  next_value INTEGER NOT NULL,
+  PRIMARY KEY (tenant_id, scope, year)
 );
 
 CREATE TABLE IF NOT EXISTS realtime_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   scope TEXT NOT NULL,
   scope_id TEXT NOT NULL,
   type TEXT NOT NULL,
@@ -251,9 +254,7 @@ CREATE INDEX IF NOT EXISTS idx_realtime_scope ON realtime_events(scope, scope_id
 `;
 
 export function openDatabase(path: string): DatabaseSync {
-  if (path !== ':memory:') {
-    mkdirSync(dirname(path), { recursive: true });
-  }
+  if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
   const db = new DatabaseSync(path);
   db.exec('PRAGMA journal_mode = WAL;');
   db.exec('PRAGMA foreign_keys = ON;');

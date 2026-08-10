@@ -3,28 +3,28 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>KobeOS - recruitment layer for Soko Huru</title>
+<title>KobeOS - swipe-to-apply recruitment</title>
 <style>
-  :root { --ink:#10211a; --muted:#5b6f66; --line:#d8e4dd; --bg:#f4f8f5; --green:#0f7a4f; --card:#fff; }
+  :root { --ink:#10211a; --muted:#5b6f66; --line:#dde7e2; --bg:#f2f7f4; --green:#0f7a4f; }
   * { box-sizing:border-box; }
   body { margin:0; font:16px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; color:var(--ink); background:var(--bg); }
-  header { background:var(--green); color:#fff; padding:48px 24px; }
-  .wrap { max-width:960px; margin:0 auto; }
-  h1 { margin:0 0 8px; font-size:32px; }
-  header p { margin:0; opacity:.9; max-width:60ch; }
-  main { padding:32px 24px 64px; }
-  .flow { display:grid; gap:12px; margin:0 0 32px; padding:0; list-style:none; counter-reset:step; }
-  .flow li { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px 14px 52px; position:relative; }
-  .flow li::before { counter-increment:step; content:counter(step); position:absolute; left:16px; top:14px;
-    width:24px; height:24px; border-radius:50%; background:var(--green); color:#fff; font-size:13px;
-    display:grid; place-items:center; font-weight:600; }
-  .cards { display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px; }
-  .card h2 { margin:0 0 6px; font-size:18px; }
+  header { background:var(--green); color:#fff; padding:52px 24px; }
+  .wrap { max-width:900px; margin:0 auto; }
+  h1 { margin:0 0 10px; font-size:34px; }
+  header p { margin:0; opacity:.92; max-width:58ch; }
+  main { padding:30px 24px 64px; }
+  h2.section { margin:32px 0 12px; font-size:19px; }
+  ol.flow { display:grid; gap:10px; margin:0; padding:0; list-style:none; counter-reset:step; }
+  ol.flow li { background:#fff; border:1px solid var(--line); border-radius:10px; padding:13px 16px 13px 50px; position:relative; }
+  ol.flow li::before { counter-increment:step; content:counter(step); position:absolute; left:15px; top:13px;
+    width:23px; height:23px; border-radius:50%; background:var(--green); color:#fff; font-size:12px; font-weight:700;
+    display:grid; place-items:center; }
+  .cards { display:grid; gap:14px; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); }
+  .card { background:#fff; border:1px solid var(--line); border-radius:12px; padding:18px; }
+  .card h3 { margin:0 0 6px; font-size:17px; }
   .card p { margin:0 0 14px; color:var(--muted); font-size:14px; }
-  a.button { display:inline-block; background:var(--green); color:#fff; text-decoration:none; padding:9px 16px;
-    border-radius:8px; font-size:14px; font-weight:600; }
-  h2.section { margin:36px 0 12px; font-size:20px; }
+  a.button { display:inline-block; background:var(--green); color:#fff; text-decoration:none; padding:9px 15px;
+             border-radius:8px; font-size:14px; font-weight:600; }
   code { background:#e7f0ea; padding:2px 6px; border-radius:5px; font-size:13px; }
 </style>
 </head>
@@ -32,37 +32,37 @@
 <header>
   <div class="wrap">
     <h1>KobeOS</h1>
-    <p>Soko Huru keeps making the vacancy posters. KobeOS turns each one into a swipeable job profile and
-       generates a private, real-time recruitment page for the employer client behind it.</p>
+    <p>The recruitment agency keeps making the posters it already makes. KobeOS turns each one into a
+       swipe-to-apply job card and gives the employer behind it a private page that fills up in real time.</p>
   </div>
 </header>
 <main class="wrap">
-  <h2 class="section">The workflow</h2>
+  <h2 class="section">The loop</h2>
   <ol class="flow">
-    <li>An employer sends a vacancy to Soko Huru by WhatsApp, email, phone or printed advert.</li>
-    <li>Soko Huru creates its normal AJIRA EXCLUSIVE poster and publishes it as it always has.</li>
-    <li>Soko Huru uploads the same poster or message into KobeOS, and Kobe AI reads the details out of it.</li>
-    <li>Staff check the extraction and press Publish. Two pages are generated at once.</li>
-    <li>Paid applicants swipe the job card. A right swipe attaches their best CV and files the application.</li>
-    <li>The employer's page shows the candidate immediately and tracks them to hire or rejection.</li>
+    <li>The agency uploads an existing job poster or pastes the message.</li>
+    <li>Kobe AI reads the vacancy out of it; staff check the fields beside the original poster.</li>
+    <li>Publishing creates the swipe card and, for a new client, the employer's private link.</li>
+    <li>A paid applicant swipes right and confirms; KobeOS attaches the CV it wrote for them.</li>
+    <li>The employer sees the candidate immediately and shortlists, interviews, hires or rejects.</li>
+    <li>The applicant's status updates the moment the employer acts.</li>
   </ol>
 
   <h2 class="section">Open a view</h2>
   <div class="cards">
     <div class="card">
-      <h2>Applicant deck</h2>
-      <p>Swipe through vacancies that match your filters and apply with one swipe.</p>
-      <a class="button" href="/swipe">Open swipe deck</a>
+      <h3>Applicant app</h3>
+      <p>Register in one form, get a CV written for you, and swipe through jobs that match your filters.</p>
+      <a class="button" href="/jobs">Open the job feed</a>
     </div>
     <div class="card">
-      <h2>Soko Huru console</h2>
-      <p>Upload a poster, review what Kobe AI read, publish, and watch every client at once.</p>
-      <a class="button" href="/agency">Open console</a>
+      <h3>Agency admin</h3>
+      <p>Upload a poster, check the extraction, publish, confirm payments and watch every client.</p>
+      <a class="button" href="/admin">Open admin</a>
     </div>
     <div class="card">
-      <h2>Employer portal</h2>
-      <p>Generated automatically per client at <code>/client/&lt;slug&gt;</code> - no site for them to build.</p>
-      <a class="button" href="/client/zanzibar-resort">Open example portal</a>
+      <h3>Employer page</h3>
+      <p>Generated per client at <code>/e/&lt;CODE&gt;</code>. No site for the employer to build.</p>
+      <a class="button" href="/admin">Find a client link</a>
     </div>
   </div>
 </main>

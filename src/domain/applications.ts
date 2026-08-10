@@ -1,38 +1,29 @@
-import type { Actor, ApplicationEvent, ApplicationStatus } from './types.ts';
+import type { Actor, ApplicationStatus, ApplicationStatusChange } from './types.ts';
 
 /**
- * The status flow from the workflow:
+ * The MVP status flow:
  *
- *   Applied -> Viewed -> Shortlisted -> Interview invited
- *           -> Interview completed -> Hired or Rejected
+ *   Applied -> Viewed -> Shortlisted -> Interview -> Hired or Rejected
  *
- * Rejection is reachable from any live state, and the applicant may withdraw at
- * any point before a decision is recorded.
+ * Rejection is reachable from any live stage, and an applicant may withdraw
+ * until a decision is recorded.
  */
-export const STATUS_FLOW: readonly ApplicationStatus[] = [
-  'applied',
-  'viewed',
-  'shortlisted',
-  'interview_invited',
-  'interview_completed',
-];
+export const STATUS_FLOW: readonly ApplicationStatus[] = ['applied', 'viewed', 'shortlisted', 'interview'];
 
 const ALLOWED_TRANSITIONS: Record<ApplicationStatus, readonly ApplicationStatus[]> = {
   applied: ['viewed', 'shortlisted', 'rejected', 'withdrawn'],
   viewed: ['shortlisted', 'rejected', 'withdrawn'],
-  shortlisted: ['interview_invited', 'rejected', 'withdrawn'],
-  // An interview can be re-scheduled, which drops back to shortlisted.
-  interview_invited: ['interview_completed', 'shortlisted', 'rejected', 'withdrawn'],
-  interview_completed: ['hired', 'rejected', 'withdrawn'],
+  shortlisted: ['interview', 'hired', 'rejected', 'withdrawn'],
+  interview: ['hired', 'rejected', 'withdrawn'],
   hired: [],
   rejected: [],
   withdrawn: [],
 };
 
+/** The agency acts for its employer clients, so it holds the same rights. */
 const ACTOR_PERMISSIONS: Record<Actor['kind'], readonly ApplicationStatus[]> = {
-  // The agency acts on behalf of employer clients, so it holds the same rights.
-  employer: ['viewed', 'shortlisted', 'interview_invited', 'interview_completed', 'hired', 'rejected'],
-  agency: ['viewed', 'shortlisted', 'interview_invited', 'interview_completed', 'hired', 'rejected'],
+  employer: ['viewed', 'shortlisted', 'interview', 'hired', 'rejected'],
+  agency: ['viewed', 'shortlisted', 'interview', 'hired', 'rejected'],
   applicant: ['withdrawn'],
   system: ['viewed'],
 };
@@ -41,11 +32,21 @@ export const STATUS_LABELS: Record<ApplicationStatus, string> = {
   applied: 'Applied',
   viewed: 'Viewed',
   shortlisted: 'Shortlisted',
-  interview_invited: 'Interview invited',
-  interview_completed: 'Interview completed',
+  interview: 'Interview',
   hired: 'Hired',
   rejected: 'Rejected',
   withdrawn: 'Withdrawn',
+};
+
+/** What the applicant is told when their status changes. */
+export const STATUS_MESSAGES: Record<ApplicationStatus, string> = {
+  applied: 'Your application has been sent.',
+  viewed: 'The employer has opened your application.',
+  shortlisted: 'You have been shortlisted.',
+  interview: 'You have been invited to an interview.',
+  hired: 'You have been hired.',
+  rejected: 'You were not selected this time.',
+  withdrawn: 'You withdrew this application.',
 };
 
 export function isTerminal(status: ApplicationStatus): boolean {
@@ -85,27 +86,22 @@ export class TransitionError extends Error {
   }
 }
 
-export function assertTransition(
-  from: ApplicationStatus,
-  to: ApplicationStatus,
-  actorKind: Actor['kind'],
-): void {
+export function assertTransition(from: ApplicationStatus, to: ApplicationStatus, actorKind: Actor['kind']): void {
   const check = canTransition(from, to, actorKind);
   if (!check.ok) throw new TransitionError(from, to, check.reason);
 }
 
 /**
- * Every status an application has ever held. Employer counters are built from
- * this rather than the current status: a candidate who is now shortlisted was
- * still viewed, so the "Viewed" tile keeps counting them.
+ * Every status an application has ever held. The employer tiles count from
+ * this, so a candidate who has moved on still counts on the earlier tile.
  */
-export function reachedStatuses(history: readonly Pick<ApplicationEvent, 'toStatus'>[]): Set<ApplicationStatus> {
+export function reachedStatuses(history: readonly Pick<ApplicationStatusChange, 'toStatus'>[]): Set<ApplicationStatus> {
   const reached = new Set<ApplicationStatus>();
-  for (const event of history) reached.add(event.toStatus);
+  for (const entry of history) reached.add(entry.toStatus);
   return reached;
 }
 
-/** Progress index for the applicant's status tracker, -1 for terminal states. */
+/** Progress index for the applicant's tracker; -1 once the outcome is known. */
 export function flowPosition(status: ApplicationStatus): number {
   return STATUS_FLOW.indexOf(status);
 }

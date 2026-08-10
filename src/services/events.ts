@@ -1,7 +1,7 @@
-import type { RealtimeScope, StoredEvent, Store } from '../data/store.ts';
+import type { RealtimeScope, StoredEvent, TenantStore } from '../data/store.ts';
 
-/** Every dashboard that is open right now belongs to one scope key. */
-export const AGENCY_SCOPE_ID = 'soko-huru';
+/** The agency dashboard's scope id within a tenant. */
+export const AGENCY_SCOPE_ID = 'agency';
 
 export type EventListener = (event: StoredEvent) => void;
 
@@ -10,17 +10,17 @@ function keyOf(scope: RealtimeScope, scopeId: string): string {
 }
 
 /**
- * Persist-then-notify event bus behind the live dashboards.
+ * Persist-then-notify bus behind the live pages, one per tenant.
  *
- * Events are written to the database first and delivered to in-process
- * listeners second, so a dashboard that reconnects can replay everything it
- * missed with `since` rather than showing a stale page.
+ * Events are written to the database first and pushed to open connections
+ * second, so a dashboard that reconnects replays what it missed instead of
+ * showing a stale page.
  */
 export class EventBus {
-  private readonly store: Store;
+  private readonly store: TenantStore;
   private readonly listeners = new Map<string, Set<EventListener>>();
 
-  constructor(store: Store) {
+  constructor(store: TenantStore) {
     this.store = store;
   }
 
@@ -49,9 +49,5 @@ export class EventBus {
 
   replay(scope: RealtimeScope, scopeId: string, sinceId: number): StoredEvent[] {
     return this.store.listEventsSince(scope, scopeId, sinceId);
-  }
-
-  subscriberCount(scope: RealtimeScope, scopeId: string): number {
-    return this.listeners.get(keyOf(scope, scopeId))?.size ?? 0;
   }
 }

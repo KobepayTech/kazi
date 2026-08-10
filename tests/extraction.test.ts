@@ -6,35 +6,39 @@ import { ZANZIBAR_POSTER } from './helpers.ts';
 
 const extractor = new RuleBasedExtractor();
 
-test('reads the Zanzibar hotel poster the way the workflow describes', () => {
-  const { vacancy } = extractor.extract(ZANZIBAR_POSTER);
+test('reads the Zanzibar hotel poster', () => {
+  const { job } = extractor.extract(ZANZIBAR_POSTER);
 
-  assert.equal(vacancy.title, 'Hotel Attendant');
-  assert.equal(vacancy.location, 'Zanzibar');
-  assert.equal(vacancy.category, 'hospitality');
-  assert.equal(vacancy.positions, 8);
-  assert.equal(vacancy.accommodationProvided, true);
-  assert.equal(vacancy.genderRequirement, 'female');
-  assert.equal(vacancy.ageMin, 18);
-  assert.equal(vacancy.ageMax, 35);
-  assert.deepEqual(vacancy.languages, ['English']);
-  assert.equal(vacancy.immediateStart, true);
-  assert.match(vacancy.experienceNote ?? '', /hospitality experience/i);
-
-  assert.equal(vacancy.salary?.currency, 'USD');
-  assert.equal(vacancy.salary?.amountMin, 200);
-  assert.equal(vacancy.salary?.period, 'month');
-  assert.equal(vacancy.salary?.plusTips, true);
+  assert.equal(job.title, 'Hotel Attendant');
+  assert.equal(job.location, 'Zanzibar');
+  assert.equal(job.category, 'hospitality');
+  assert.equal(job.positions, 8);
+  assert.equal(job.accommodationProvided, true);
+  assert.equal(job.immediateStart, true);
+  assert.deepEqual(job.languages, ['English']);
+  assert.equal(job.salary?.currency, 'USD');
+  assert.equal(job.salary?.amountMin, 200);
+  assert.equal(job.salary?.period, 'month');
+  assert.equal(job.salary?.plusTips, true);
 });
 
-test('spells out the number of positions written as a word', () => {
-  const { vacancy } = extractor.extract('We require eight female hotel attendants.');
-  assert.equal(vacancy.positions, 8);
-  assert.equal(vacancy.title, 'Hotel Attendant');
+test('keeps the poster requirements as a list for the detail page', () => {
+  const { job } = extractor.extract(ZANZIBAR_POSTER);
+  const text = job.requirements.join(' | ').toLowerCase();
+  assert.match(text, /english required/);
+  assert.match(text, /hospitality experience preferred/);
+  // The banner line is furniture, not a requirement.
+  assert.ok(!text.includes('ajira exclusive'));
+});
+
+test('spells out a positions count written as a word', () => {
+  const { job } = extractor.extract('We require eight female hotel attendants.');
+  assert.equal(job.positions, 8);
+  assert.equal(job.title, 'Hotel Attendant');
 });
 
 test('reads a Swahili poster', () => {
-  const { vacancy, detectedLanguage } = extractor.extract(
+  const { job, detectedLanguage } = extractor.extract(
     [
       'Tunahitaji madereva 15 wa malori.',
       'Eneo: Dar es Salaam',
@@ -46,19 +50,39 @@ test('reads a Swahili poster', () => {
   );
 
   assert.equal(detectedLanguage, 'sw');
-  assert.equal(vacancy.positions, 15);
-  assert.equal(vacancy.location, 'Dar es Salaam');
-  assert.equal(vacancy.category, 'driving');
-  assert.equal(vacancy.salary?.amountMin, 600_000);
-  assert.equal(vacancy.salary?.currency, 'TZS');
-  assert.equal(vacancy.experienceYearsMin, 3);
-  assert.equal(vacancy.accommodationProvided, true);
-  assert.equal(vacancy.immediateStart, true);
+  assert.equal(job.positions, 15);
+  assert.equal(job.location, 'Dar es Salaam');
+  assert.equal(job.category, 'driving');
+  assert.equal(job.salary?.amountMin, 600_000);
+  assert.equal(job.salary?.currency, 'TZS');
+  assert.equal(job.accommodationProvided, true);
+  assert.equal(job.immediateStart, true);
 });
 
-test('labelled lines beat guesses, and every value keeps its evidence', () => {
+test('splits responsibilities, requirements and contact details into sections', () => {
+  const { job } = extractor.extract(
+    [
+      'Job title: Call Centre Agent',
+      'Location: Dar es Salaam',
+      'Salary: TSh 450,000 per month',
+      'Responsibilities:',
+      'Answer customer calls',
+      'Log every complaint',
+      'Requirements:',
+      'Form four and above',
+      'Contact: 0777 000 111',
+    ].join('\n'),
+  );
+
+  assert.deepEqual(job.responsibilities, ['Answer customer calls', 'Log every complaint']);
+  assert.ok(job.requirements.includes('Form four and above'));
+  assert.match(job.contactInfo ?? '', /0777 000 111/);
+});
+
+test('a labelled line beats a guess, and keeps the evidence for the review screen', () => {
   const result = extractor.extract(['Job title: Night Auditor', 'Location: Stone Town', 'Positions: 3'].join('\n'));
-  assert.equal(result.vacancy.title, 'Night Auditor');
+  assert.equal(result.job.title, 'Night Auditor');
+  assert.equal(result.job.positions, 3);
 
   const titleConfidence = result.confidence.find((entry) => entry.field === 'title');
   assert.ok(titleConfidence);
@@ -66,23 +90,20 @@ test('labelled lines beat guesses, and every value keeps its evidence', () => {
   assert.equal(titleConfidence.evidence, 'Job title: Night Auditor');
 });
 
-test('flags low-confidence and missing fields for staff to check', () => {
+test('flags what a human should check before publishing', () => {
   const result = extractor.extract('Tunahitaji wafanyakazi.');
   assert.ok(result.needsReview.includes('salary'));
   assert.ok(result.needsReview.includes('location'));
-  // Assumed defaults are flagged too, so nothing silently invents a value.
-  assert.ok(result.needsReview.includes('employmentType'));
 });
 
-test('a stated diploma implies the vacancy needs a certificate package', () => {
-  const { vacancy } = extractor.extract('Job title: Accountant\nEducation: Diploma in accounting\nLocation: Mwanza');
-  assert.equal(vacancy.educationMin, 'diploma');
-  assert.equal(vacancy.certificateRequired, true);
+test('a licence requirement means the job needs a certificate package', () => {
+  const { job } = extractor.extract('Driver needed. Location: Mwanza. Salary: TSh 600,000. Leseni daraja C inahitajika.');
+  assert.equal(job.certificateRequired, true);
 });
 
 test('an explicit "no certificate" wins over any qualification wording', () => {
-  const { vacancy } = extractor.extract('Shop attendant needed. No certificate required. Location: Arusha');
-  assert.equal(vacancy.certificateRequired, false);
+  const { job } = extractor.extract('Shop attendant needed. No certificate required. Location: Arusha');
+  assert.equal(job.certificateRequired, false);
 });
 
 test('does not read an age range as a salary', () => {
@@ -97,11 +118,16 @@ test('normalises pay to a monthly TZS figure for filtering', () => {
   const salary = parseSalary('Salary: TSh 450,000 - 600,000 per month');
   assert.equal(salary?.amountMin, 450_000);
   assert.equal(salary?.amountMax, 600_000);
-  // The low end is what an applicant's minimum-salary filter compares against.
+  // The low end is what a minimum-salary filter compares against.
   assert.equal(salary?.monthlyTzs, 450_000);
 });
 
-test('formats the pay line shown on the swipe card', () => {
+test('a k or m suffix only counts when it is attached to the digits', () => {
+  assert.equal(parseSalary('Mshahara: TSh 600,000 kwa mwezi')?.amountMin, 600_000);
+  assert.equal(parseSalary('Salary 450k per month')?.amountMin, 450_000);
+});
+
+test('formats the pay line printed on the card', () => {
   const salary = parseSalary('Salary: USD 200 plus tips');
   assert.ok(salary);
   assert.equal(formatSalaryLine(salary), 'USD 200 per month + tips');
@@ -115,17 +141,14 @@ test('reads provided/not provided wording, negatives first', () => {
   assert.equal(parseBooleanish('maybe'), null);
 });
 
-test('an assisted extractor may fill blanks but never overwrites a labelled value', async () => {
+test('an assisted extractor fills blanks but never overrides a labelled value', async () => {
   const assisted = new AssistedExtractor(async () =>
-    JSON.stringify({ title: 'Something Else', employerName: 'Zanzibar Resort', mealsProvided: true }),
+    JSON.stringify({ title: 'Something Else', employerName: 'Zanzibar Resort' }),
   );
   const result = await assisted.extract(`Job title: Hotel Attendant\n${ZANZIBAR_POSTER}`);
 
-  // The poster states the title on a labelled line, so the model cannot move it.
-  assert.equal(result.vacancy.title, 'Hotel Attendant');
-  // These two the poster never stated, so the model's reading is accepted.
-  assert.equal(result.vacancy.employerName, 'Zanzibar Resort');
-  assert.equal(result.vacancy.mealsProvided, true);
+  assert.equal(result.job.title, 'Hotel Attendant');
+  assert.equal(result.job.employerName, 'Zanzibar Resort');
 });
 
 test('a failing model falls back to the rule-based reading', async () => {
@@ -133,6 +156,6 @@ test('a failing model falls back to the rule-based reading', async () => {
     throw new Error('model unavailable');
   });
   const result = await assisted.extract(ZANZIBAR_POSTER);
-  assert.equal(result.vacancy.title, 'Hotel Attendant');
+  assert.equal(result.job.title, 'Hotel Attendant');
   assert.equal(result.extractor, 'kobe-rules-v1');
 });

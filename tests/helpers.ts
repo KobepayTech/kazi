@@ -1,9 +1,29 @@
-import { createApp, type Kobeos } from '../src/app.ts';
-import type { Applicant, Cv, JobCategory, Vacancy } from '../src/domain/types.ts';
+import { createPlatform, type Platform, type TenantContext } from '../src/app.ts';
+import type { Applicant, Job, JobCategory } from '../src/domain/types.ts';
 
-/** A throwaway KobeOS running entirely in memory. */
-export function makeApp(): Kobeos {
-  return createApp({ config: { databasePath: ':memory:', portalBaseUrl: 'https://sokohuru.test' } });
+export type Harness = {
+  platform: Platform;
+  kobe: TenantContext;
+  close(): void;
+};
+
+/** A throwaway KobeOS running entirely in memory, with one tenant seeded. */
+export function makeHarness(): Harness {
+  const platform = createPlatform({
+    config: {
+      databasePath: ':memory:',
+      publicBaseUrl: 'https://jobs.kobeos.test',
+      uploadsDir: 'data/test-uploads',
+      defaultTenantName: 'Soko Huru',
+      defaultTenantSlug: 'soko-huru',
+      defaultTenantApiKey: 'test-agency-key',
+    },
+  });
+  return {
+    platform,
+    kobe: platform.tenantContext(platform.defaultTenant.id),
+    close: () => platform.close(),
+  };
 }
 
 export const ZANZIBAR_POSTER = [
@@ -14,28 +34,37 @@ export const ZANZIBAR_POSTER = [
   'Accommodation provided',
   'English required',
   'Hospitality experience preferred',
-  'Age: 18-35',
   'Ready to start immediately',
 ].join('\n');
 
+export type PublishResult = {
+  job: Job;
+  employerId: string;
+  employerLink: string;
+  accessCode: string | null;
+};
+
 export async function publish(
-  app: Kobeos,
-  options: { text?: string; employerName?: string; staffId?: string } = {},
-): Promise<{ vacancy: Vacancy; employerId: string; portalUrl: string; vacancyUrl: string; accessCode: string | null }> {
-  const staffId = options.staffId ?? 'staff_test';
-  const { draft } = await app.intake.uploadPost({
+  context: TenantContext,
+  options: { text?: string; employerName?: string; imagePath?: string | null; contactPhone?: string | null } = {},
+): Promise<PublishResult> {
+  const { draft } = await context.intake.uploadPost({
     channel: 'whatsapp_text',
     text: options.text ?? ZANZIBAR_POSTER,
+    imagePath: options.imagePath ?? null,
     employerName: options.employerName ?? 'Zanzibar Resort',
-    staffId,
+    staffId: 'staff_test',
   });
-  const result = app.intake.publishDraft(draft.id, { staffId, employerName: options.employerName ?? 'Zanzibar Resort' });
+  const result = context.intake.publishDraft(draft.id, {
+    staffId: 'staff_test',
+    employerName: options.employerName ?? 'Zanzibar Resort',
+    contactPhone: options.contactPhone ?? null,
+  });
   return {
-    vacancy: result.vacancy,
+    job: result.job,
     employerId: result.employerId,
-    portalUrl: result.portalUrl,
-    vacancyUrl: result.vacancyUrl,
-    accessCode: result.employerAccessCode?.secret ?? null,
+    employerLink: result.employerLink,
+    accessCode: result.accessCode?.secret ?? null,
   };
 }
 
@@ -43,52 +72,56 @@ export type ApplicantOptions = {
   fullName?: string;
   phone?: string;
   location?: string;
-  gender?: Applicant['gender'];
-  dateOfBirth?: string;
-  languages?: string[];
-  willingToRelocate?: boolean;
   categories?: JobCategory[];
   experienceYears?: number;
-  educationLevel?: Cv['educationLevel'];
-  packageCode?: string | null;
-  preferredSalaryTzs?: number | null;
+  languages?: string[];
+  willingToRelocate?: boolean;
+  minSalaryTzs?: number | null;
+  /** null registers the applicant without paying for anything. */
+  planCode?: string | null;
+  /** Leaves the payment submitted but unconfirmed. */
+  confirmPayment?: boolean;
 };
 
-/** Registers an applicant with a CV and, unless told otherwise, a paid membership. */
-export function makeApplicant(app: Kobeos, options: ApplicantOptions = {}): { applicant: Applicant; cv: Cv } {
-  const applicant = app.agency.registerApplicant({
-    fullName: options.fullName ?? 'Neema Joseph',
-    phone: options.phone ?? `+2557110000${Math.floor(Math.random() * 90 + 10)}`,
-    location: options.location ?? 'Dar es Salaam',
-    gender: options.gender ?? 'female',
-    dateOfBirth: options.dateOfBirth ?? '2001-04-12',
-    educationLevel: options.educationLevel ?? 'secondary',
-    languages: options.languages ?? ['English', 'Swahili'],
-    willingToRelocate: options.willingToRelocate ?? true,
-    verified: true,
-  });
+let phoneCounter = 0;
 
-  const cv = app.store.addCv({
-    applicantId: applicant.id,
-    label: 'Hospitality CV',
-    categories: options.categories ?? ['hospitality'],
-    headline: 'Hotel attendant',
+/** Registers an applicant and, unless told otherwise, gets them a live membership. */
+export function makeApplicant(
+  context: TenantContext,
+  options: ApplicantOptions = {},
+): { applicant: Applicant; token: string } {
+  phoneCounter += 1;
+  const { applicant } = context.applicants.register({
+    fullName: options.fullName ?? 'Neema Joseph',
+    phone: options.phone ?? `+2557110000${String(phoneCounter).padStart(2, '0')}`,
+    location: options.location ?? 'Dar es Salaam',
+    educationLevel: 'secondary',
     experienceYears: options.experienceYears ?? 2,
-    educationLevel: options.educationLevel ?? 'secondary',
     skills: ['Housekeeping'],
     languages: options.languages ?? ['English', 'Swahili'],
-    certificates: [],
-    preferredSalaryTzs: options.preferredSalaryTzs ?? null,
-    filePath: null,
-    isDefault: true,
+    willingToRelocate: options.willingToRelocate ?? true,
+    categories: options.categories ?? ['hospitality'],
+    minSalaryTzs: options.minSalaryTzs ?? null,
   });
 
-  const packageCode = options.packageCode === undefined ? 'non_certificate' : options.packageCode;
-  if (packageCode !== null) {
-    const membership = app.memberships.purchase(applicant.id, packageCode);
-    const pkg = app.store.getPackage(packageCode);
-    app.memberships.confirmPayment(membership.id, pkg?.priceTzs ?? 0, 'MPESA-TEST');
+  const planCode = options.planCode === undefined ? 'non_certificate' : options.planCode;
+  if (planCode !== null) {
+    const plan = context.store.getPlan(planCode);
+    const { payment } = context.memberships.submitPayment({
+      applicantId: applicant.id,
+      planCode,
+      amountTzs: plan?.priceTzs ?? 0,
+      reference: `MPESA-${applicant.id.slice(-8)}`,
+    });
+    if (options.confirmPayment !== false) context.memberships.confirmPayment(payment.id, 'staff_test');
   }
 
-  return { applicant, cv };
+  return { applicant, token: context.access.startApplicantSession(applicant.id).token };
+}
+
+/** Swipe right and confirm, the way the app does it. */
+export function applyTo(context: TenantContext, applicantId: string, jobId: string) {
+  const prompt = context.swipe.swipe(applicantId, jobId, 'right');
+  if (prompt.result !== 'confirm_required') return prompt;
+  return context.swipe.swipe(applicantId, jobId, 'right', true);
 }

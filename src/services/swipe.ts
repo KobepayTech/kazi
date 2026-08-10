@@ -1,90 +1,77 @@
-import { AGENCY_NAME } from '../config.ts';
-import type { Store } from '../data/store.ts';
-import { STATUS_LABELS, flowPosition } from '../domain/applications.ts';
+import type { TenantStore } from '../data/store.ts';
+import { STATUS_LABELS, STATUS_MESSAGES, flowPosition } from '../domain/applications.ts';
 import { buildJobCard } from '../domain/cards.ts';
-import { checkMembership } from '../domain/membership.ts';
-import {
-  eligibilityFailures,
-  preferenceMismatches,
-  scoreMatch,
-  selectBestCv,
-} from '../domain/matching.ts';
+import { byNewest, eligibilityFailures, filterReasons } from '../domain/feed.ts';
+import { checkMembership } from '../domain/plans.ts';
+import { formatSalaryLine } from '../domain/salary.ts';
 import type {
   Applicant,
   Application,
-  Cv,
+  ApplicationStatus,
+  Job,
   JobCard,
-  MembershipPackage,
+  MembershipPlan,
   SwipeDirection,
-  Vacancy,
+  Tenant,
 } from '../domain/types.ts';
 import { AppError } from './errors.ts';
 import { AGENCY_SCOPE_ID, EventBus } from './events.ts';
+
+export type ApplyPrompt = {
+  jobId: string;
+  title: string;
+  employerName: string;
+  /** "Your CV will be shared with this employer." */
+  message: string;
+};
 
 export type ApplicationConfirmation = {
   message: string;
   position: string;
   company: string;
   submittedThrough: string;
-  cvUsed: string;
   applicationNumber: string;
   status: string;
 };
 
 export type SwipeOutcome =
+  | { result: 'confirm_required'; prompt: ApplyPrompt }
   | { result: 'applied'; application: Application; confirmation: ApplicationConfirmation }
-  | { result: 'skipped'; vacancyId: string }
-  | { result: 'saved'; vacancyId: string }
-  | {
-      result: 'blocked';
-      code: string;
-      message: string;
-      upgradeTo?: MembershipPackage | null;
-      reference?: string;
-    };
+  | { result: 'skipped'; jobId: string }
+  | { result: 'saved'; jobId: string }
+  | { result: 'blocked'; code: string; message: string; upgradeTo?: MembershipPlan | null; reference?: string };
 
 export type TrackedApplication = {
   reference: string;
-  vacancyTitle: string;
+  jobId: string;
+  jobTitle: string;
   employerName: string;
-  status: Application['status'];
+  status: ApplicationStatus;
   statusLabel: string;
+  statusMessage: string;
   step: number;
-  matchScore: number;
-  interviewAt: string | null;
   appliedAt: string;
   updatedAt: string;
 };
 
-/**
- * An applicant with no CV on file can still browse. Scoring falls back to what
- * their profile says so the deck is not empty, but applying needs a real CV.
- */
-function profileCv(applicant: Applicant): Cv {
-  return {
-    id: 'profile',
-    applicantId: applicant.id,
-    label: 'Profile',
-    categories: [],
-    headline: null,
-    experienceYears: 0,
-    educationLevel: applicant.educationLevel,
-    skills: [],
-    languages: applicant.languages,
-    certificates: [],
-    preferredSalaryTzs: null,
-    filePath: null,
-    isDefault: true,
-    createdAt: applicant.createdAt,
-  };
-}
+export type JobDetail = {
+  job: Job;
+  employerName: string;
+  salaryLine: string;
+  remainingPositions: number;
+  postedThrough: string;
+  alreadyApplied: boolean;
+  saved: boolean;
+};
 
 export class SwipeService {
-  private readonly store: Store;
+  private readonly store: TenantStore;
+  private readonly tenant: Tenant;
   private readonly bus: EventBus;
 
-  constructor(store: Store, bus: EventBus) {
+  constructor(store: TenantStore, tenant: Tenant, bus: EventBus) {
     this.store = store;
+    this.tenant = tenant;
     this.bus = bus;
   }
 
@@ -94,158 +81,158 @@ export class SwipeService {
     return applicant;
   }
 
-  /**
-   * The deck. Only cards the applicant asked for in their filters, only
-   * vacancies they are actually eligible for, best match first.
-   */
+  private employerName(employerId: string): string {
+    return this.store.getEmployer(employerId)?.name ?? 'Employer';
+  }
+
+  /** The deck: open jobs that pass the applicant's four filters, newest first. */
   feed(applicantId: string, limit = 20): JobCard[] {
-    const applicant = this.requireApplicant(applicantId);
+    this.requireApplicant(applicantId);
     const preferences = this.store.getPreferences(applicantId);
-    const cvs = this.store.listCvs(applicantId);
-    const resolved = this.store.listResolvedVacancyIds(applicantId);
-    const hiredCounts = this.store.hiredCountsByVacancy();
+    const resolved = this.store.listResolvedJobIds(applicantId);
+    const hiredCounts = this.store.hiredCountsByJob();
 
-    const cards: { card: JobCard; publishedAt: string }[] = [];
-    for (const vacancy of this.store.listPublishedVacancies()) {
-      if (resolved.has(vacancy.id)) continue;
-      const hiredCount = hiredCounts.get(vacancy.id) ?? 0;
-      if (eligibilityFailures(vacancy, applicant, { hiredCount }).length > 0) continue;
-      if (preferenceMismatches(vacancy, preferences, applicant).length > 0) continue;
-
-      const best =
-        selectBestCv(vacancy, applicant, cvs, preferences) ??
-        { cv: profileCv(applicant), match: scoreMatch(vacancy, applicant, profileCv(applicant), preferences) };
-
-      cards.push({
-        card: buildJobCard(vacancy, best.match, {
-          remainingPositions: Math.max(0, vacancy.positions - hiredCount),
-        }),
-        publishedAt: vacancy.publishedAt ?? vacancy.createdAt,
-      });
-    }
-
-    return cards
-      .sort((a, b) => b.card.matchScore - a.card.matchScore || b.publishedAt.localeCompare(a.publishedAt))
+    return this.store
+      .listPublishedJobs()
+      .filter((job) => !resolved.has(job.id))
+      .filter((job) => eligibilityFailures(job, { hiredCount: hiredCounts.get(job.id) ?? 0 }).length === 0)
+      .filter((job) => filterReasons(job, preferences).length === 0)
+      .sort(byNewest)
       .slice(0, limit)
-      .map((entry) => entry.card);
+      .map((job) =>
+        buildJobCard(job, {
+          employerName: this.employerName(job.employerId),
+          agencyName: this.tenant.name,
+          remainingPositions: Math.max(0, job.positions - (hiredCounts.get(job.id) ?? 0)),
+        }),
+      );
   }
 
   savedJobs(applicantId: string): JobCard[] {
-    const applicant = this.requireApplicant(applicantId);
-    const preferences = this.store.getPreferences(applicantId);
-    const cvs = this.store.listCvs(applicantId);
-    const hiredCounts = this.store.hiredCountsByVacancy();
-
+    this.requireApplicant(applicantId);
+    const hiredCounts = this.store.hiredCountsByJob();
     const cards: JobCard[] = [];
-    for (const vacancyId of this.store.listSavedVacancyIds(applicantId)) {
-      const vacancy = this.store.getVacancy(vacancyId);
-      if (vacancy === null) continue;
-      const best =
-        selectBestCv(vacancy, applicant, cvs, preferences) ??
-        { cv: profileCv(applicant), match: scoreMatch(vacancy, applicant, profileCv(applicant), preferences) };
+    for (const jobId of this.store.listSavedJobIds(applicantId)) {
+      const job = this.store.getJob(jobId);
+      if (job === null) continue;
       cards.push(
-        buildJobCard(vacancy, best.match, {
-          remainingPositions: Math.max(0, vacancy.positions - (hiredCounts.get(vacancy.id) ?? 0)),
+        buildJobCard(job, {
+          employerName: this.employerName(job.employerId),
+          agencyName: this.tenant.name,
+          remainingPositions: Math.max(0, job.positions - (hiredCounts.get(job.id) ?? 0)),
+          saved: true,
         }),
       );
     }
     return cards;
   }
 
-  swipe(applicantId: string, vacancyId: string, direction: SwipeDirection): SwipeOutcome {
-    const applicant = this.requireApplicant(applicantId);
-    const vacancy = this.store.getVacancy(vacancyId);
-    if (vacancy === null) throw AppError.notFound('Vacancy not found.');
-
-    if (direction === 'left') {
-      this.store.recordSwipe(applicantId, vacancyId, 'left');
-      return { result: 'skipped', vacancyId };
-    }
-    if (direction === 'up') {
-      this.store.recordSwipe(applicantId, vacancyId, 'up');
-      return { result: 'saved', vacancyId };
-    }
-    return this.apply(applicant, vacancy);
+  /** Tapping a card opens the full advert, including the original poster. */
+  jobDetail(jobId: string, applicantId: string | null = null): JobDetail {
+    const job = this.store.getJob(jobId);
+    if (job === null || job.status === 'draft') throw AppError.notFound('Job not found.');
+    return {
+      job,
+      employerName: this.employerName(job.employerId),
+      salaryLine: formatSalaryLine(job.salary),
+      remainingPositions: Math.max(0, job.positions - this.store.countHired(job.id)),
+      postedThrough: this.tenant.name,
+      alreadyApplied: applicantId !== null && this.store.findApplication(job.id, applicantId) !== null,
+      saved: applicantId !== null && this.store.listSavedJobIds(applicantId).includes(job.id),
+    };
   }
 
   /**
-   * What happens after a right swipe, in the order the workflow specifies:
-   *
-   *   1. active Soko Huru membership?
-   *   2. does the package cover this vacancy category?
-   *   3. pick the most relevant CV
-   *   4. create the application
-   *   5. push it to the employer's private page
-   *   6. update the Soko Huru dashboard
-   *   7. confirm to the applicant
+   * A right swipe never submits on its own: the first call returns the prompt
+   * the app shows, and only a confirmed call creates the application. An
+   * accidental swipe must not send someone's CV to an employer.
    */
-  private apply(applicant: Applicant, vacancy: Vacancy): SwipeOutcome {
-    const existing = this.store.findApplication(vacancy.id, applicant.id);
+  swipe(applicantId: string, jobId: string, direction: SwipeDirection, confirmed = false): SwipeOutcome {
+    const applicant = this.requireApplicant(applicantId);
+    const job = this.store.getJob(jobId);
+    if (job === null) throw AppError.notFound('Job not found.');
+
+    if (direction === 'left') {
+      this.store.recordSwipe(applicantId, jobId, 'left');
+      return { result: 'skipped', jobId };
+    }
+    if (direction === 'up') {
+      this.store.recordSwipe(applicantId, jobId, 'up');
+      return { result: 'saved', jobId };
+    }
+
+    if (!confirmed) {
+      return {
+        result: 'confirm_required',
+        prompt: {
+          jobId: job.id,
+          title: job.title,
+          employerName: this.employerName(job.employerId),
+          message: 'Your CV will be shared with this employer.',
+        },
+      };
+    }
+    return this.apply(applicant, job);
+  }
+
+  /**
+   * Right swipe confirmed:
+   *   membership check -> CV attached -> application created ->
+   *   employer page updated -> agency dashboard updated -> applicant told.
+   */
+  private apply(applicant: Applicant, job: Job): SwipeOutcome {
+    const existing = this.store.findApplication(job.id, applicant.id);
     if (existing !== null) {
       return {
         result: 'blocked',
         code: 'already_applied',
-        message: 'You have already applied for this vacancy.',
+        message: 'You have already applied for this job.',
         reference: existing.reference,
       };
     }
 
-    const packages = this.store.listPackages();
     const membership = this.store.getActiveMembership(applicant.id) ?? this.store.getLatestMembership(applicant.id);
-    const pkg = membership === null ? null : this.store.getPackage(membership.packageCode);
-    const check = checkMembership(membership, pkg, vacancy, packages);
+    const plan = membership === null ? null : this.store.getPlan(membership.planCode);
+    const check = checkMembership(membership, plan, job, this.store.listPlans());
     if (!check.ok) {
       return { result: 'blocked', code: check.code, message: check.message, upgradeTo: check.upgradeTo };
     }
 
-    const hiredCount = this.store.countHired(vacancy.id);
-    const failures = eligibilityFailures(vacancy, applicant, { hiredCount });
-    if (failures.length > 0) {
-      const first = failures[0];
-      if (first !== undefined) return { result: 'blocked', code: first.code, message: first.message };
+    const failures = eligibilityFailures(job, { hiredCount: this.store.countHired(job.id) });
+    const firstFailure = failures[0];
+    if (firstFailure !== undefined) {
+      return { result: 'blocked', code: firstFailure.code, message: firstFailure.message };
     }
 
-    const preferences = this.store.getPreferences(applicant.id);
-    const best = selectBestCv(vacancy, applicant, this.store.listCvs(applicant.id), preferences);
-    if (best === null) {
-      return {
-        result: 'blocked',
-        code: 'no_cv',
-        message: 'Create a CV in your Soko Huru profile before applying.',
-      };
+    const cv = this.store.getCvByApplicant(applicant.id);
+    if (cv === null) {
+      return { result: 'blocked', code: 'no_cv', message: 'Finish your profile so KobeOS can build your CV.' };
     }
-
-    const employer = this.store.getEmployer(vacancy.employerId);
-    const employerName = employer?.name ?? 'the employer';
 
     const application = this.store.transaction(() => {
-      const reference = this.store.nextApplicationReference();
       const created = this.store.createApplication({
-        reference,
-        vacancyId: vacancy.id,
+        reference: this.store.nextApplicationReference(),
+        jobId: job.id,
         applicantId: applicant.id,
-        cvId: best.cv.id,
-        employerId: vacancy.employerId,
-        matchScore: best.match.score,
+        cvId: cv.id,
+        employerId: job.employerId,
       });
-      this.store.incrementApplicationsUsed(check.membership.id);
-      this.store.recordSwipe(applicant.id, vacancy.id, 'right');
+      this.store.recordSwipe(applicant.id, job.id, 'right');
       return created;
     });
 
+    const employerName = this.employerName(job.employerId);
     const payload = {
       applicationId: application.id,
       reference: application.reference,
-      vacancyId: vacancy.id,
-      vacancyTitle: vacancy.title,
-      employerId: vacancy.employerId,
+      jobId: job.id,
+      jobTitle: job.title,
+      employerId: job.employerId,
       applicantId: applicant.id,
       applicantName: applicant.fullName,
-      matchScore: application.matchScore,
       status: application.status,
     };
-    // 5 and 6: the employer page and the agency dashboard both update live.
-    this.bus.publish('employer', vacancy.employerId, 'application_received', payload);
+    this.bus.publish('employer', job.employerId, 'application_received', payload);
     this.bus.publish('agency', AGENCY_SCOPE_ID, 'application_received', payload);
     this.bus.publish('applicant', applicant.id, 'application_submitted', payload);
 
@@ -254,31 +241,29 @@ export class SwipeService {
       application,
       confirmation: {
         message: 'Application submitted successfully',
-        position: vacancy.title,
+        position: job.title,
         company: employerName,
-        submittedThrough: AGENCY_NAME,
-        cvUsed: best.cv.label,
+        submittedThrough: this.tenant.name,
         applicationNumber: application.reference,
-        status: 'Received',
+        status: 'Applied',
       },
     };
   }
 
-  /** The applicant's own status tracker. */
+  /** The applicant's own status list. */
   tracker(applicantId: string): TrackedApplication[] {
     this.requireApplicant(applicantId);
     return this.store.listApplicationsForApplicant(applicantId).map((application) => {
-      const vacancy = this.store.getVacancy(application.vacancyId);
-      const employer = this.store.getEmployer(application.employerId);
+      const job = this.store.getJob(application.jobId);
       return {
         reference: application.reference,
-        vacancyTitle: vacancy?.title ?? 'Vacancy',
-        employerName: employer?.name ?? 'Employer',
+        jobId: application.jobId,
+        jobTitle: job?.title ?? 'Job',
+        employerName: this.employerName(application.employerId),
         status: application.status,
         statusLabel: STATUS_LABELS[application.status],
+        statusMessage: STATUS_MESSAGES[application.status],
         step: flowPosition(application.status),
-        matchScore: application.matchScore,
-        interviewAt: application.interviewAt,
         appliedAt: application.createdAt,
         updatedAt: application.updatedAt,
       };

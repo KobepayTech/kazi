@@ -17,7 +17,8 @@ export type Handler = (ctx: Ctx) => unknown | Promise<unknown>;
 
 type Route = { method: string; segments: string[]; handler: Handler };
 
-const MAX_BODY_BYTES = 1_000_000;
+// Poster images and certificate scans arrive as base64 in the JSON body.
+const MAX_BODY_BYTES = 8_000_000;
 
 export function json(res: ServerResponse, status: number, payload: unknown): typeof HANDLED {
   const body = JSON.stringify(payload ?? null);
