@@ -75,6 +75,69 @@
     </section>
 
     <section class="panel">
+      <h2>Post a vacancy
+        <button class="link" id="togglePost">Add one</button></h2>
+      <p style="color:#5b6f66;font-size:13px;margin:0">
+        Optional — you can still just send it to the agency the way you always have.
+        Anything you type here goes to them to check before it reaches applicants.</p>
+
+      <div id="postForm" hidden style="margin-top:14px">
+        <div class="filters">
+          <div><label for="pTitle">Job title</label><input id="pTitle" placeholder="Hotel Attendant"></div>
+          <div><label for="pLocation">Location</label><input id="pLocation" placeholder="Zanzibar"></div>
+          <div><label for="pPositions">Positions</label><input id="pPositions" type="number" min="1" value="1"></div>
+          <div><label for="pCategory">Category</label>
+            <select id="pCategory">
+              <option value="hospitality">Hospitality</option>
+              <option value="customer_care">Customer care</option>
+              <option value="driving">Driving</option>
+              <option value="teaching">Teaching</option>
+              <option value="security">Security</option>
+              <option value="retail">Retail</option>
+              <option value="construction">Construction</option>
+              <option value="domestic">Domestic work</option>
+              <option value="healthcare">Healthcare</option>
+              <option value="it">IT</option>
+              <option value="finance">Finance</option>
+              <option value="sales">Sales</option>
+              <option value="other">Other</option>
+            </select></div>
+        </div>
+        <div class="filters" style="margin-top:10px">
+          <div><label for="pAmount">Salary</label><input id="pAmount" type="number" min="0" placeholder="200"></div>
+          <div><label for="pCurrency">Currency</label>
+            <select id="pCurrency"><option value="TZS">TSh</option><option value="USD">USD</option>
+              <option value="KES">KSh</option><option value="EUR">EUR</option></select></div>
+          <div><label for="pPeriod">Per</label>
+            <select id="pPeriod"><option value="month" selected>Month</option><option value="day">Day</option>
+              <option value="hour">Hour</option><option value="week">Week</option><option value="year">Year</option></select></div>
+          <div><label for="pDeadline">Closing date (optional)</label><input id="pDeadline" type="date"></div>
+        </div>
+        <label for="pDescription">About the job</label>
+        <input id="pDescription" placeholder="What the work involves">
+        <div class="filters" style="margin-top:10px">
+          <div><label for="pLanguages">Languages needed</label><input id="pLanguages" placeholder="English, Swahili"></div>
+          <div><label for="pExperience">Experience</label><input id="pExperience" placeholder="2 years hospitality preferred"></div>
+        </div>
+        <label for="pRequirements">Requirements (one per line)</label>
+        <textarea id="pRequirements" rows="3" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;font:inherit"></textarea>
+        <p style="margin:12px 0 0;font-size:14px;display:flex;gap:18px;flex-wrap:wrap">
+          <label style="text-transform:none;letter-spacing:0;font-size:14px;color:var(--ink);margin:0">
+            <input type="checkbox" id="pAccommodation" style="width:auto"> Accommodation provided</label>
+          <label style="text-transform:none;letter-spacing:0;font-size:14px;color:var(--ink);margin:0">
+            <input type="checkbox" id="pTips" style="width:auto"> Plus tips</label>
+          <label style="text-transform:none;letter-spacing:0;font-size:14px;color:var(--ink);margin:0">
+            <input type="checkbox" id="pCertificate" style="width:auto"> Certificate required</label>
+          <label style="text-transform:none;letter-spacing:0;font-size:14px;color:var(--ink);margin:0">
+            <input type="checkbox" id="pImmediate" style="width:auto"> Immediate start</label>
+        </p>
+        <button class="primary" id="submitPost" style="margin-top:14px">Send to the agency</button>
+      </div>
+
+      <div id="submissions" style="margin-top:14px"></div>
+    </section>
+
+    <section class="panel">
       <h2>Applicants</h2>
       <div class="filters">
         <div><label for="fJob">Job</label><select id="fJob"><option value="">All</option></select></div>
@@ -257,9 +320,68 @@ $('cvDownload').addEventListener('click', () => {
 
 $('applyFilters').addEventListener('click', () => void loadCandidates());
 
+const SUBMISSION_LABELS = {
+  extracted: 'Waiting for the agency',
+  reviewed: 'Being checked',
+  published: 'Live for applicants',
+  discarded: 'Not published',
+};
+
+async function loadSubmissions() {
+  const data = await api('/api/employer/submissions');
+  $('submissions').innerHTML = data.submissions.length === 0
+    ? ''
+    : `<h3 style="font-size:14px;margin:0 0 6px">Vacancies you sent in</h3>` +
+      data.submissions.map((entry) => `
+        <div class="job" style="padding:9px 0">
+          <div><strong>${esc(entry.title)}</strong> · ${entry.positions} position(s)<br>
+            <small>Sent ${new Date(entry.submittedAt).toLocaleDateString()}</small></div>
+          <span class="tag">${esc(SUBMISSION_LABELS[entry.status] || entry.status)}</span>
+        </div>`).join('');
+}
+
+$('togglePost').addEventListener('click', () => {
+  const form = $('postForm');
+  form.hidden = !form.hidden;
+  $('togglePost').textContent = form.hidden ? 'Add one' : 'Hide';
+});
+
+$('submitPost').addEventListener('click', async () => {
+  try {
+    const result = await api('/api/employer/jobs', {
+      method: 'POST',
+      body: JSON.stringify({
+        title: $('pTitle').value.trim(),
+        location: $('pLocation').value.trim(),
+        category: $('pCategory').value,
+        positions: Number($('pPositions').value || 1),
+        salaryAmountMin: $('pAmount').value ? Number($('pAmount').value) : null,
+        salaryCurrency: $('pCurrency').value,
+        salaryPeriod: $('pPeriod').value,
+        salaryPlusTips: $('pTips').checked,
+        description: $('pDescription').value.trim() || null,
+        requirements: $('pRequirements').value.split('\n').map((s) => s.trim()).filter(Boolean),
+        applicationDeadline: $('pDeadline').value || null,
+        languages: $('pLanguages').value.split(',').map((s) => s.trim()).filter(Boolean),
+        experienceNote: $('pExperience').value.trim() || null,
+        accommodationProvided: $('pAccommodation').checked,
+        certificateRequired: $('pCertificate').checked,
+        immediateStart: $('pImmediate').checked,
+      }),
+    });
+    notice('ok', esc(result.message));
+    $('postForm').hidden = true;
+    $('togglePost').textContent = 'Add one';
+    for (const id of ['pTitle', 'pLocation', 'pAmount', 'pDescription', 'pRequirements', 'pLanguages', 'pExperience']) {
+      $(id).value = '';
+    }
+    await loadSubmissions();
+  } catch (error) { notice('err', esc(error.message)); }
+});
+
 async function refresh() {
   renderDashboard(await api('/api/employer/dashboard'));
-  await loadCandidates();
+  await Promise.all([loadCandidates(), loadSubmissions()]);
 }
 
 function listen() {

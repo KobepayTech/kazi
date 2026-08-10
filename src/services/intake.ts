@@ -2,8 +2,18 @@ import type { AppConfig } from '../config.ts';
 import type { JobDraft, TenantStore } from '../data/store.ts';
 import { RuleBasedExtractor } from '../domain/extraction.ts';
 import { newId, randomShortCode } from '../domain/ids.ts';
-import { withMonthlyTzs } from '../domain/salary.ts';
-import type { ExtractedJob, IntakeChannel, Job, JobExtractor, Salary, Tenant } from '../domain/types.ts';
+import { formatSalaryLine, withMonthlyTzs } from '../domain/salary.ts';
+import type {
+  Currency,
+  ExtractedJob,
+  IntakeChannel,
+  Job,
+  JobCategory,
+  JobExtractor,
+  Salary,
+  SalaryPeriod,
+  Tenant,
+} from '../domain/types.ts';
 import type { Store } from '../data/store.ts';
 import type { AccessService, IssuedSecret } from './access.ts';
 import { AppError } from './errors.ts';
@@ -39,6 +49,53 @@ export type PublishResult = {
 };
 
 const REQUIRED = ['title', 'location', 'category', 'positions', 'salary'] as const;
+
+/** Stops a client filling the review queue with half-finished postings. */
+const MAX_PENDING_EMPLOYER_DRAFTS = 20;
+
+/** What an employer client types into their own page. */
+export type EmployerSubmission = {
+  employerId: string;
+  title: string;
+  location: string;
+  category: JobCategory;
+  positions: number;
+  salaryAmountMin: number | null;
+  salaryAmountMax: number | null;
+  salaryCurrency: Currency;
+  salaryPeriod: SalaryPeriod;
+  salaryPlusTips: boolean;
+  description: string | null;
+  responsibilities: string[];
+  requirements: string[];
+  applicationDeadline: string | null;
+  accommodationProvided: boolean;
+  languages: string[];
+  experienceNote: string | null;
+  certificateRequired: boolean;
+  immediateStart: boolean;
+};
+
+/** Renders a typed submission for the left-hand pane of the review screen. */
+function renderSubmission(input: EmployerSubmission, employerName: string, salary: Salary): string {
+  const lines = [
+    employerName,
+    `Job title: ${input.title}`,
+    `Location: ${input.location}`,
+    `Positions: ${input.positions}`,
+    `Salary: ${formatSalaryLine(salary)}`,
+  ];
+  if (input.languages.length > 0) lines.push(`Languages: ${input.languages.join(', ')}`);
+  if (input.experienceNote !== null) lines.push(`Experience: ${input.experienceNote}`);
+  if (input.accommodationProvided) lines.push('Accommodation provided');
+  if (input.certificateRequired) lines.push('Certificate required');
+  if (input.immediateStart) lines.push('Immediate start');
+  if (input.applicationDeadline !== null) lines.push(`Deadline: ${input.applicationDeadline}`);
+  if (input.description !== null) lines.push('', input.description);
+  if (input.responsibilities.length > 0) lines.push('', 'Responsibilities:', ...input.responsibilities);
+  if (input.requirements.length > 0) lines.push('', 'Requirements:', ...input.requirements);
+  return lines.join('\n');
+}
 
 function mergeOverrides(extracted: ExtractedJob, overrides: Record<string, unknown> | null): ExtractedJob {
   if (overrides === null) return extracted;
@@ -110,6 +167,85 @@ export class IntakeService {
       needsReview: extraction.needsReview,
     });
     return { draft };
+  }
+
+  /**
+   * An employer client typing a vacancy into their own page, instead of
+   * sending it to the agency. It lands in the same review queue as an uploaded
+   * poster and goes live only when agency staff publish it, so the agency stays
+   * in the loop and the listings stay consistent.
+   */
+  submitFromEmployer(input: EmployerSubmission): JobDraft {
+    const employer = this.store.getEmployer(input.employerId);
+    if (employer === null) throw AppError.notFound('Employer client not found.');
+    if (this.store.countPendingDraftsForEmployer(employer.id) >= MAX_PENDING_EMPLOYER_DRAFTS) {
+      throw AppError.conflict(
+        'too_many_pending',
+        'You have several vacancies waiting for the agency to review. Please wait for those before adding more.',
+      );
+    }
+
+    const salary = withMonthlyTzs({
+      amountMin: input.salaryAmountMin,
+      amountMax: input.salaryAmountMax,
+      currency: input.salaryCurrency,
+      period: input.salaryPeriod,
+      plusTips: input.salaryPlusTips,
+    });
+
+    const job: ExtractedJob = {
+      title: input.title,
+      employerName: employer.name,
+      location: input.location,
+      category: input.category,
+      positions: input.positions,
+      salary,
+      description: input.description,
+      responsibilities: input.responsibilities,
+      requirements: input.requirements,
+      applicationDeadline: input.applicationDeadline,
+      contactInfo: employer.contactPhone ?? employer.contactEmail,
+      accommodationProvided: input.accommodationProvided,
+      languages: input.languages,
+      experienceNote: input.experienceNote,
+      certificateRequired: input.certificateRequired,
+      immediateStart: input.immediateStart,
+    };
+
+    // Nothing was inferred here - the client typed it - so every field it
+    // filled is recorded as stated, and none are flagged as uncertain.
+    const evidence = `typed by ${employer.name}`;
+    const confidence = (Object.keys(job) as (keyof ExtractedJob)[])
+      .filter((field) => {
+        const value = job[field];
+        return Array.isArray(value) ? value.length > 0 : value !== null;
+      })
+      .map((field) => ({ field, confidence: 0.95, evidence }));
+
+    const draft = this.store.createDraft({
+      employerId: employer.id,
+      employerNameGuess: employer.name,
+      intakeChannel: 'employer_form',
+      rawText: renderSubmission(input, employer.name, salary),
+      sourceImagePath: null,
+      extraction: {
+        job,
+        confidence,
+        needsReview: [],
+        extractor: 'employer-form-v1',
+        detectedLanguage: 'en',
+      },
+      createdBy: `employer:${employer.id}`,
+    });
+
+    this.bus.publish('agency', AGENCY_SCOPE_ID, 'job_submitted_by_employer', {
+      draftId: draft.id,
+      employerId: employer.id,
+      employerName: employer.name,
+      title: input.title,
+      positions: input.positions,
+    });
+    return draft;
   }
 
   /** Staff fixing what Kobe AI got wrong, before publishing. */

@@ -1,4 +1,4 @@
-import type { ApplicationDetail, ApplicationFilters, TenantStore } from '../data/store.ts';
+import type { ApplicationDetail, ApplicationFilters, DraftStatus, TenantStore } from '../data/store.ts';
 import { STATUS_LABELS, STATUS_MESSAGES, assertTransition } from '../domain/applications.ts';
 import { renderCvText } from '../domain/cv.ts';
 import { relocationNote } from '../domain/feed.ts';
@@ -27,6 +27,16 @@ export type EmployerDashboard = {
     hired: number;
     remainingPositions: number;
   };
+};
+
+/** A vacancy the client typed into their own page, and where it has got to. */
+export type EmployerSubmissionRow = {
+  draftId: string;
+  title: string;
+  positions: number;
+  status: DraftStatus;
+  jobId: string | null;
+  submittedAt: string;
 };
 
 export type CandidateCard = ApplicationDetail & {
@@ -72,6 +82,21 @@ export class EmployerService {
       { positions: 0, applications: 0, newApplications: 0, viewed: 0, shortlisted: 0, interview: 0, hired: 0, remainingPositions: 0 },
     );
     return { employer, jobs, totals };
+  }
+
+  /** What the client has sent in, and whether the agency has published it yet. */
+  submissions(employerId: string): EmployerSubmissionRow[] {
+    return this.store
+      .listDraftsForEmployer(employerId)
+      .filter((draft) => draft.intakeChannel === 'employer_form')
+      .map((draft) => ({
+        draftId: draft.id,
+        title: draft.extraction.job.title ?? 'Untitled vacancy',
+        positions: draft.extraction.job.positions ?? 1,
+        status: draft.status,
+        jobId: draft.jobId,
+        submittedAt: draft.createdAt,
+      }));
   }
 
   job(employerId: string, jobId: string): Job {

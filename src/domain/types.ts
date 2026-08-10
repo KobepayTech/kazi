@@ -96,7 +96,13 @@ export type Salary = {
   monthlyTzs: number | null;
 };
 
-export type IntakeChannel = 'poster_image' | 'pasted_text' | 'whatsapp_text' | 'manual_entry';
+export type IntakeChannel =
+  | 'poster_image'
+  | 'pasted_text'
+  | 'whatsapp_text'
+  | 'manual_entry'
+  /** Typed by the employer client themselves, into their own private page. */
+  | 'employer_form';
 
 /**
  * What Kobe AI reads out of a poster. The MVP extracts the fields the agency

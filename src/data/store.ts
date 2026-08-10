@@ -898,6 +898,23 @@ export class TenantStore {
     return rows.map(mapDraft);
   }
 
+  listDraftsForEmployer(employerId: string): JobDraft[] {
+    const rows = this.db
+      .prepare('SELECT * FROM job_drafts WHERE tenant_id = ? AND employer_id = ? ORDER BY created_at DESC')
+      .all(this.tenantId, employerId) as Row[];
+    return rows.map(mapDraft);
+  }
+
+  countPendingDraftsForEmployer(employerId: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS total FROM job_drafts
+         WHERE tenant_id = ? AND employer_id = ? AND status IN ('extracted', 'reviewed')`,
+      )
+      .get(this.tenantId, employerId) as Row;
+    return Number(row.total);
+  }
+
   saveDraftCorrections(id: string, overrides: Record<string, unknown>, employerId: string | null): void {
     this.db
       .prepare(

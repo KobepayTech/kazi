@@ -4,6 +4,13 @@ import type { AccessService, IssuedSecret } from './access.ts';
 import { AppError } from './errors.ts';
 import { AGENCY_SCOPE_ID, EventBus } from './events.ts';
 
+export type QueuedDraft = {
+  draft: JobDraft;
+  employerName: string | null;
+  /** Whether the agency uploaded it or the client typed it themselves. */
+  source: 'employer_form' | 'agency_upload';
+};
+
 export type ClientRow = {
   employer: Employer;
   employerLink: string;
@@ -41,6 +48,23 @@ export class AgencyService {
 
   drafts(status?: JobDraft['status']): JobDraft[] {
     return this.store.listDrafts(status);
+  }
+
+  /**
+   * Everything waiting for staff to publish, whether the agency uploaded a
+   * poster or the client typed the vacancy into their own page.
+   */
+  reviewQueue(): QueuedDraft[] {
+    return this.store
+      .listDrafts()
+      .filter((draft) => draft.status === 'extracted' || draft.status === 'reviewed')
+      .map((draft) => ({
+        draft,
+        employerName:
+          (draft.employerId === null ? null : this.store.getEmployer(draft.employerId)?.name ?? null) ??
+          draft.employerNameGuess,
+        source: draft.intakeChannel === 'employer_form' ? 'employer_form' : 'agency_upload',
+      }));
   }
 
   clients(): ClientRow[] {

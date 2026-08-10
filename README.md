@@ -62,7 +62,7 @@ server. Storage is `node:sqlite`, HTTP is `node:http`, crypto is `node:crypto`.
 npm install          # devDependencies only: typescript + @types/node
 npm run seed         # demo tenant, posters, applicants, payments, applications
 npm start            # http://localhost:3000
-npm test             # 74 tests
+npm test             # 85 tests
 npm run typecheck
 ```
 
@@ -76,6 +76,9 @@ tokens it created. Sign in to the agency console with the development key
 | Agency admin   | `/admin`           | staff key                             |
 | Employer page  | `/e/<CODE>`        | access code, or an OTP                |
 
+The employer page also carries an optional form for posting a vacancy directly;
+see below.
+
 ## The four participants
 
 **The agency** receives vacancies, makes its posters as usual, uploads them to
@@ -86,8 +89,10 @@ act on a client's behalf.
 enforces the membership rules, files applications, generates the employer page
 and pushes every change live.
 
-**The employer client** never fills in a form. Publishing a job creates the
-client record and a private link on first sight.
+**The employer client** never *has* to fill in a form — publishing a job
+creates the client record and a private link on first sight. If they would
+rather type a vacancy themselves, their page lets them, and it goes to the
+agency to check.
 
 **The applicant** registers once, pays for a package, and swipes. Their CV is
 written for them and attached automatically.
@@ -113,6 +118,30 @@ Salaries are normalised to a monthly TZS figure (`src/domain/salary.ts`) so one
 interface. It never overrides a value the poster stated on a labelled line, and
 a model failure falls back to the rule-based reading rather than blocking the
 agency from publishing.
+
+### Two ways a vacancy arrives — one review queue
+
+The default is the agency uploading a post it already made. But a client who
+would rather type it can: their private page has an optional **Post a vacancy**
+form.
+
+Either way the vacancy lands in the **same review queue** and goes live only
+when agency staff publish it. The queue marks which is which, so staff can see
+at a glance whether they are checking an extraction or a client's own wording.
+Publishing a client-typed vacancy attributes it to that client automatically —
+no name to re-enter, same link, no new access code.
+
+That keeps the agency in the loop (listings stay consistent and filterable) and
+keeps the low-friction path open for employers who just want to send a WhatsApp
+message.
+
+**There is deliberately no OCR.** Every intake path is text: a pasted message,
+a typed form, or a poster image with its text alongside. OCR would only serve
+the case where an image is the *only* artefact, and at MVP volume retyping
+those is cheaper than the dependency. `jobs.intake_channel` records how each
+vacancy actually arrived (`poster_image`, `whatsapp_text`, `pasted_text`,
+`manual_entry`, `employer_form`), so the decision can be revisited with real
+numbers rather than a guess.
 
 ### Applicant registration and the generated CV
 
@@ -217,7 +246,7 @@ src/
   http/                  router, routes, server
   web/                   applicant app, agency admin, employer page
   bin/                   serve, seed
-tests/                   74 tests
+tests/                   85 tests
 ```
 
 ## Data model

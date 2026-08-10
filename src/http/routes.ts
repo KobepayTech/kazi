@@ -3,11 +3,22 @@ import { fileURLToPath } from 'node:url';
 import type { Platform, TenantContext } from '../app.ts';
 import type { RealtimeScope } from '../data/store.ts';
 import { STATUS_LABELS } from '../domain/applications.ts';
-import { APPLICATION_STATUSES } from '../domain/types.ts';
-import type { Actor, ApplicationStatus, EducationLevel, JobCategory, SwipeDirection } from '../domain/types.ts';
+import { APPLICATION_STATUSES, JOB_CATEGORIES } from '../domain/types.ts';
+import type {
+  Actor,
+  ApplicationStatus,
+  Currency,
+  EducationLevel,
+  JobCategory,
+  SalaryPeriod,
+  SwipeDirection,
+} from '../domain/types.ts';
 import { AppError } from '../services/errors.ts';
 import { AGENCY_SCOPE_ID } from '../services/events.ts';
 import { HANDLED, Router, html, json, type Ctx } from './router.ts';
+
+const CURRENCIES: readonly Currency[] = ['TZS', 'USD', 'KES', 'EUR'];
+const SALARY_PERIODS: readonly SalaryPeriod[] = ['hour', 'day', 'week', 'month', 'year'];
 
 // ------------------------------------------------------------------ helpers
 
@@ -406,6 +417,64 @@ export function createRouter(platform: Platform): Router {
     return context.employer.addNote(employerId, ctx.params.applicationId ?? '', str(ctx.body, 'note'));
   });
 
+  /**
+   * A client typing a vacancy themselves, rather than sending it to the
+   * agency. It joins the same review queue and only goes live when staff
+   * publish it.
+   */
+  router.post('/api/employer/jobs', (ctx) => {
+    const { context, employerId } = requireEmployer(ctx);
+    const category = optStr(ctx.body, 'category') ?? 'other';
+    if (!JOB_CATEGORIES.includes(category as JobCategory)) {
+      throw AppError.badRequest('invalid_category', `"category" must be one of ${JOB_CATEGORIES.join(', ')}.`);
+    }
+    const positions = optNum(ctx.body, 'positions') ?? 1;
+    if (positions < 1 || positions > 500) {
+      throw AppError.badRequest('invalid_positions', 'Enter between 1 and 500 positions.');
+    }
+    const currency = optStr(ctx.body, 'salaryCurrency') ?? 'TZS';
+    if (!CURRENCIES.includes(currency as Currency)) {
+      throw AppError.badRequest('invalid_currency', `"salaryCurrency" must be one of ${CURRENCIES.join(', ')}.`);
+    }
+    const period = optStr(ctx.body, 'salaryPeriod') ?? 'month';
+    if (!SALARY_PERIODS.includes(period as SalaryPeriod)) {
+      throw AppError.badRequest('invalid_period', `"salaryPeriod" must be one of ${SALARY_PERIODS.join(', ')}.`);
+    }
+
+    const draft = context.intake.submitFromEmployer({
+      employerId,
+      title: str(ctx.body, 'title'),
+      location: str(ctx.body, 'location'),
+      category: category as JobCategory,
+      positions,
+      salaryAmountMin: optNum(ctx.body, 'salaryAmountMin'),
+      salaryAmountMax: optNum(ctx.body, 'salaryAmountMax'),
+      salaryCurrency: currency as Currency,
+      salaryPeriod: period as SalaryPeriod,
+      salaryPlusTips: optBool(ctx.body, 'salaryPlusTips') ?? false,
+      description: optStr(ctx.body, 'description'),
+      responsibilities: strArray(ctx.body, 'responsibilities'),
+      requirements: strArray(ctx.body, 'requirements'),
+      applicationDeadline: optStr(ctx.body, 'applicationDeadline'),
+      accommodationProvided: optBool(ctx.body, 'accommodationProvided') ?? false,
+      languages: strArray(ctx.body, 'languages'),
+      experienceNote: optStr(ctx.body, 'experienceNote'),
+      certificateRequired: optBool(ctx.body, 'certificateRequired') ?? false,
+      immediateStart: optBool(ctx.body, 'immediateStart') ?? false,
+    });
+
+    return {
+      draftId: draft.id,
+      status: draft.status,
+      message: 'Sent to the agency. They will check it and publish it to applicants.',
+    };
+  });
+
+  router.get('/api/employer/submissions', (ctx) => {
+    const { context, employerId } = requireEmployer(ctx);
+    return { submissions: context.employer.submissions(employerId) };
+  });
+
   router.post('/api/employer/jobs/:jobId/close', (ctx) => {
     const { context, employerId } = requireEmployer(ctx);
     return context.employer.closeJob(employerId, ctx.params.jobId ?? '', { kind: 'employer', id: employerId });
@@ -435,6 +504,11 @@ export function createRouter(platform: Platform): Router {
       staffId: actor.id,
     });
     return { draft, extraction: draft.extraction };
+  });
+
+  router.get('/api/agency/queue', (ctx) => {
+    const { context } = requireAgency(ctx);
+    return { queue: context.agency.reviewQueue() };
   });
 
   router.get('/api/agency/drafts', (ctx) => {

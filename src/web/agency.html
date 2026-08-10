@@ -94,8 +94,13 @@
     <button class="primary" id="extract" style="margin-top:12px">Read with Kobe AI</button>
   </section>
 
+  <section class="panel" id="queuePanel" hidden>
+    <h2>Waiting for review</h2>
+    <div id="queue"></div>
+  </section>
+
   <section class="panel" id="reviewPanel" hidden>
-    <h2>2. Check what Kobe AI read</h2>
+    <h2 id="reviewHeading">2. Check what Kobe AI read</h2>
     <div class="review">
       <div class="poster" id="posterView"></div>
       <div id="fields"></div>
@@ -158,8 +163,12 @@ const TEXT_FIELDS = ['title', 'employerName', 'location', 'category', 'positions
 const LONG_FIELDS = ['description', 'responsibilities', 'requirements'];
 const FLAG_FIELDS = ['accommodationProvided', 'certificateRequired', 'immediateStart'];
 
-function renderReview(extraction, rawText) {
+function renderReview(extraction, rawText, source = 'agency_upload') {
   $('reviewPanel').hidden = false;
+  $('reviewHeading').textContent = source === 'employer_form'
+    ? '2. Check what the client sent in'
+    : '2. Check what Kobe AI read';
+  $('reviewPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
   $('posterView').innerHTML =
     (posterPath ? `<img src="${esc(posterPath)}" alt="Original poster">` : '') +
     `<pre>${esc(rawText)}</pre>`;
@@ -253,7 +262,10 @@ $('publish').addEventListener('click', async () => {
     const result = await api(`/api/agency/drafts/${draft.id}/publish`, {
       method: 'POST',
       body: JSON.stringify({
-        employerName: $('employerName').value.trim() || null,
+        // A draft the client typed already knows its employer; a pasted poster
+        // takes the name from the form above.
+        employerId: draft.employerId || null,
+        employerName: draft.employerId ? null : ($('employerName').value.trim() || null),
         contactName: $('contactName').value.trim() || null,
         contactPhone: $('contactPhone').value.trim() || null,
         contactEmail: $('contactEmail').value.trim() || null,
@@ -269,11 +281,39 @@ $('publish').addEventListener('click', async () => {
   } catch (error) { notice('err', esc(error.message)); }
 });
 
+function renderQueue(items) {
+  $('queuePanel').hidden = items.length === 0;
+  $('queue').innerHTML = items.map((item) => `
+    <div class="field" style="grid-template-columns:1fr auto">
+      <span><strong>${esc(item.draft.extraction.job.title || 'Untitled')}</strong>
+        ${item.source === 'employer_form'
+          ? '<span style="color:#0f7a4f;font-weight:600"> · typed by the client</span>'
+          : '<span style="color:#5b6f66"> · poster upload</span>'}<br>
+        <small style="color:#5b6f66">${esc(item.employerName || 'No client chosen')} ·
+          sent ${new Date(item.draft.createdAt).toLocaleString()}</small></span>
+      <button class="primary" data-review="${esc(item.draft.id)}">Review</button>
+    </div>`).join('');
+
+  $('queue').querySelectorAll('[data-review]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      try {
+        const loaded = await api(`/api/agency/drafts/${button.dataset.review}`);
+        draft = loaded;
+        posterPath = loaded.sourceImagePath;
+        if (loaded.employerNameGuess) $('employerName').value = loaded.employerNameGuess;
+        renderReview(loaded.extraction, loaded.rawText || '', loaded.intakeChannel === 'employer_form' ? 'employer_form' : 'agency_upload');
+      } catch (error) { notice('err', esc(error.message)); }
+    });
+  });
+}
+
 async function refresh() {
-  const [overview, clients, payments, plans] = await Promise.all([
+  const [overview, clients, payments, plans, queue] = await Promise.all([
     api('/api/agency/overview'), api('/api/agency/clients'),
-    api('/api/agency/payments'), api('/api/agency/plans'),
+    api('/api/agency/payments'), api('/api/agency/plans'), api('/api/agency/queue'),
   ]);
+
+  renderQueue(queue.queue);
 
   const s = overview.summary;
   $('summary').innerHTML = [
@@ -367,7 +407,8 @@ function listen() {
   const source = new EventSource(`/api/agency/stream?key=${encodeURIComponent(key)}`);
   const log = $('log');
   for (const type of ['application_received', 'application_status_changed', 'job_published', 'draft_created',
-                      'payment_submitted', 'employer_access_issued', 'employer_otp_requested', 'job_closed']) {
+                      'job_submitted_by_employer', 'payment_submitted', 'employer_access_issued',
+                      'employer_otp_requested', 'job_closed']) {
     source.addEventListener(type, (event) => {
       const payload = JSON.parse(event.data);
       const line = document.createElement('div');
