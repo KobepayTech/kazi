@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Soko Huru jobs - swipe deck</title>
+<style>
+  :root { --ink:#10211a; --muted:#5b6f66; --line:#d8e4dd; --bg:#f4f8f5; --green:#0f7a4f; --red:#b3372b; --amber:#a86a10; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; color:var(--ink);
+         background:var(--bg); display:flex; justify-content:center; padding:20px 16px 48px; }
+  .app { width:100%; max-width:440px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:13px; margin:0 0 18px; }
+  .panel { background:#fff; border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px; }
+  label { display:block; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:4px; }
+  input, select { width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:8px; font-size:14px; background:#fff; }
+  button { font:inherit; cursor:pointer; border-radius:8px; border:1px solid transparent; padding:10px 14px; font-weight:600; }
+  .primary { background:var(--green); color:#fff; width:100%; margin-top:10px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:16px; padding:22px; box-shadow:0 8px 24px rgba(16,33,26,.07); }
+  .card h2 { margin:0 0 2px; font-size:24px; }
+  .place { color:var(--muted); margin:0 0 12px; }
+  .salary { font-size:20px; font-weight:700; color:var(--green); margin:0 0 2px; }
+  .positions { color:var(--muted); font-size:14px; margin:0 0 14px; }
+  ul.highlights { list-style:none; padding:0; margin:0 0 16px; }
+  ul.highlights li { padding:5px 0 5px 20px; position:relative; font-size:14px; border-top:1px solid var(--line); }
+  ul.highlights li::before { content:"·"; position:absolute; left:6px; font-weight:700; color:var(--green); }
+  .match { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--muted); margin-bottom:6px; }
+  .bar { flex:1; height:6px; background:#e7f0ea; border-radius:3px; overflow:hidden; }
+  .bar span { display:block; height:100%; background:var(--green); }
+  .via { font-size:12px; color:var(--muted); border-top:1px solid var(--line); padding-top:10px; margin-top:4px; }
+  .actions { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-top:14px; }
+  .skip { background:#fff; border-color:var(--line); color:var(--red); }
+  .save { background:#fff; border-color:var(--line); color:var(--amber); }
+  .apply { background:var(--green); color:#fff; }
+  .notice { padding:12px 14px; border-radius:10px; font-size:14px; margin-bottom:14px; }
+  .ok { background:#e6f4ec; border:1px solid #b7dfc8; }
+  .warn { background:#fdf1e3; border:1px solid #f0d3a8; }
+  .err { background:#fbeae8; border:1px solid #f0c2bc; }
+  .empty { text-align:center; color:var(--muted); padding:36px 12px; }
+  dl { margin:0; font-size:14px; }
+  dt { color:var(--muted); font-size:12px; }
+  dd { margin:0 0 8px; }
+  .row { display:flex; justify-content:space-between; gap:12px; font-size:14px; padding:8px 0; border-top:1px solid var(--line); }
+  .tag { font-size:12px; padding:2px 8px; border-radius:999px; background:#e7f0ea; color:var(--green); }
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>Soko Huru jobs</h1>
+  <p class="sub">Swipe right to apply. Your CV is attached automatically.</p>
+
+  <div class="panel" id="signin">
+    <label for="token">Your app token from Soko Huru</label>
+    <input id="token" placeholder="paste the token you were given" autocomplete="off">
+    <label for="applicantId" style="margin-top:10px">Applicant ID</label>
+    <input id="applicantId" placeholder="app_..." autocomplete="off">
+    <button class="primary" id="signinBtn">Open my deck</button>
+  </div>
+
+  <div id="status"></div>
+  <div id="membership" class="panel" hidden></div>
+  <div id="deck"></div>
+  <div id="tracker" class="panel" hidden></div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let token = sessionStorage.getItem('kobeos_token') || '';
+let applicantId = sessionStorage.getItem('kobeos_applicant') || '';
+let cards = [];
+
+async function api(path, options = {}) {
+  const response = await fetch(path, {
+    ...options,
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}`, ...(options.headers || {}) },
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data?.error?.message || `Request failed (${response.status})`);
+  return data;
+}
+
+function notice(kind, text) {
+  $('status').innerHTML = `<div class="notice ${kind}">${text}</div>`;
+}
+
+function renderMembership(view) {
+  const box = $('membership');
+  box.hidden = false;
+  if (!view.membership || !view.active) {
+    box.innerHTML = `<strong>No active membership.</strong><p class="sub" style="margin:6px 0 0">
+      Pay for a Soko Huru package to apply. You can still browse.</p>`;
+    return;
+  }
+  const remaining = view.applicationsRemaining === null ? 'unlimited' : `${view.applicationsRemaining} left`;
+  box.innerHTML = `<div class="row" style="border:0;padding:0">
+      <span><span class="tag">${view.package?.name ?? ''}</span></span>
+      <span>${remaining} · ${view.daysRemaining ?? '-'} days</span>
+    </div>`;
+}
+
+function renderCard() {
+  const deck = $('deck');
+  const card = cards[0];
+  if (!card) {
+    deck.innerHTML = `<div class="panel empty">No more vacancies match your filters right now.<br>Check back later.</div>`;
+    return;
+  }
+  deck.innerHTML = `
+    <div class="card">
+      <h2>${escape(card.title)}</h2>
+      <p class="place">${escape(card.location)}</p>
+      <p class="salary">${escape(card.salaryLine)}</p>
+      <p class="positions">${escape(card.positionsLine)}</p>
+      <ul class="highlights">${card.highlights.map((h) => `<li>${escape(h)}</li>`).join('')}</ul>
+      <div class="match"><span>Match ${card.matchScore}%</span>
+        <span class="bar"><span style="width:${card.matchScore}%"></span></span></div>
+      <p class="via">${escape(card.postedThrough)}${card.sourceImagePath ? ' · original poster attached' : ''}</p>
+      <div class="actions">
+        <button class="skip" data-dir="left">Skip</button>
+        <button class="save" data-dir="up">Save</button>
+        <button class="apply" data-dir="right">Apply</button>
+      </div>
+    </div>`;
+  deck.querySelectorAll('button[data-dir]').forEach((button) => {
+    button.addEventListener('click', () => swipe(card.vacancyId, button.dataset.dir));
+  });
+}
+
+function escape(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (ch) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+async function swipe(vacancyId, direction) {
+  try {
+    const outcome = await api(`/api/applicants/${applicantId}/swipes`, {
+      method: 'POST',
+      body: JSON.stringify({ vacancyId, direction }),
+    });
+    if (outcome.result === 'applied') {
+      const c = outcome.confirmation;
+      notice('ok', `<strong>${escape(c.message)}</strong><br>
+        Position: ${escape(c.position)}<br>Company: ${escape(c.company)}<br>
+        Submitted through: ${escape(c.submittedThrough)}<br>CV used: ${escape(c.cvUsed)}<br>
+        Application number: <strong>${escape(c.applicationNumber)}</strong><br>Status: ${escape(c.status)}`);
+      cards.shift();
+    } else if (outcome.result === 'blocked') {
+      const upgrade = outcome.upgradeTo ? ` Upgrade to ${escape(outcome.upgradeTo.name)} (TSh ${outcome.upgradeTo.priceTzs.toLocaleString()}).` : '';
+      notice('warn', escape(outcome.message) + upgrade);
+      if (outcome.code === 'already_applied') cards.shift();
+    } else {
+      notice('ok', outcome.result === 'saved' ? 'Saved for later.' : 'Skipped.');
+      cards.shift();
+    }
+    renderCard();
+    await refreshTracker();
+    if (cards.length === 0) await loadFeed();
+  } catch (error) {
+    notice('err', escape(error.message));
+  }
+}
+
+async function loadFeed() {
+  const data = await api(`/api/applicants/${applicantId}/feed`);
+  cards = data.cards;
+  renderCard();
+}
+
+async function refreshTracker() {
+  const data = await api(`/api/applicants/${applicantId}/applications`);
+  const box = $('tracker');
+  if (data.applications.length === 0) { box.hidden = true; return; }
+  box.hidden = false;
+  box.innerHTML = `<strong>My applications</strong>` + data.applications.map((entry) => `
+    <div class="row"><span>${escape(entry.vacancyTitle)}<br>
+      <small style="color:#5b6f66">${escape(entry.employerName)} · ${escape(entry.reference)}</small></span>
+      <span class="tag">${escape(entry.statusLabel)}</span></div>`).join('');
+}
+
+async function start() {
+  try {
+    $('signin').hidden = true;
+    const profile = await api(`/api/applicants/${applicantId}`);
+    renderMembership(profile.membership);
+    await loadFeed();
+    await refreshTracker();
+    listen();
+  } catch (error) {
+    $('signin').hidden = false;
+    notice('err', escape(error.message));
+  }
+}
+
+function listen() {
+  const source = new EventSource(`/api/applicants/${applicantId}/stream?token=${encodeURIComponent(token)}`);
+  source.addEventListener('application_status_changed', (event) => {
+    const payload = JSON.parse(event.data);
+    notice('ok', `Your application ${escape(payload.reference)} is now ${escape(payload.statusLabel)}.`);
+    void refreshTracker();
+  });
+  source.addEventListener('interview_scheduled', (event) => {
+    const payload = JSON.parse(event.data);
+    notice('ok', `Interview scheduled for application ${escape(payload.reference)}.`);
+  });
+}
+
+$('signinBtn').addEventListener('click', () => {
+  token = $('token').value.trim();
+  applicantId = $('applicantId').value.trim();
+  if (!token || !applicantId) { notice('err', 'Enter both the token and your applicant ID.'); return; }
+  sessionStorage.setItem('kobeos_token', token);
+  sessionStorage.setItem('kobeos_applicant', applicantId);
+  void start();
+});
+
+if (token && applicantId) {
+  $('token').value = token;
+  $('applicantId').value = applicantId;
+  void start();
+}
+</script>
+</body>
+</html>
