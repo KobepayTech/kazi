@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createPlatform, type Platform, type TenantContext } from '../src/app.ts';
 import type { Applicant, Job, JobCategory } from '../src/domain/types.ts';
 
@@ -7,13 +10,17 @@ export type Harness = {
   close(): void;
 };
 
-/** A throwaway KobeOS running entirely in memory, with one tenant seeded. */
+/**
+ * A throwaway KobeOS: in-memory database, uploads in a temp directory that is
+ * removed on close, so a test run never leaves anything in the working tree.
+ */
 export function makeHarness(): Harness {
+  const uploadsDir = mkdtempSync(join(tmpdir(), 'kobeos-test-'));
   const platform = createPlatform({
     config: {
       databasePath: ':memory:',
       publicBaseUrl: 'https://jobs.kobeos.test',
-      uploadsDir: 'data/test-uploads',
+      uploadsDir,
       defaultTenantName: 'Soko Huru',
       defaultTenantSlug: 'soko-huru',
       defaultTenantApiKey: 'test-agency-key',
@@ -22,7 +29,10 @@ export function makeHarness(): Harness {
   return {
     platform,
     kobe: platform.tenantContext(platform.defaultTenant.id),
-    close: () => platform.close(),
+    close: () => {
+      platform.close();
+      rmSync(uploadsDir, { recursive: true, force: true });
+    },
   };
 }
 
