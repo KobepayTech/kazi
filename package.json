@@ -1,8 +1,8 @@
 {
-  "name": "kobeos",
+  "name": "kazi",
   "version": "0.1.0",
   "private": true,
-  "description": "KobeOS - turns Soko Huru vacancy posters into swipeable job profiles and real-time employer recruitment pages",
+  "description": "Kazi by KobeOS - multi-tenant recruitment MVP with swipe-to-apply jobs, generated CVs, memberships, employer pages and Kobe Fit matching",
   "type": "module",
   "engines": {
     "node": ">=22.18"
