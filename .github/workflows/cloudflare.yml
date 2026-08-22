@@ -1,0 +1,91 @@
+name: Kazi Cloudflare
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-and-deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.18.0
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Typecheck Node runtime
+        run: npm run typecheck
+
+      - name: Bundle Cloudflare runtime
+        run: npx --yes wrangler@4 deploy --dry-run --outdir dist-cloudflare
+
+      - name: Verify Cloudflare credentials exist
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo 'Missing CLOUDFLARE_API_TOKEN'; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo 'Missing CLOUDFLARE_ACCOUNT_ID'; exit 1; }
+
+      - name: Deploy Worker
+        if: github.event_name != 'pull_request'
+        id: deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4 deploy 2>&1 | tee /tmp/kazi-deploy.log
+          WORKERS_URL="$(grep -Eo 'https://[A-Za-z0-9._-]+\.workers\.dev' /tmp/kazi-deploy.log | tail -n 1 || true)"
+          if [ -z "$WORKERS_URL" ]; then
+            echo 'Could not determine the workers.dev URL from Wrangler output.'
+            exit 1
+          fi
+          echo "workers_url=$WORKERS_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Configure hosted Kazi secrets
+        if: github.event_name != 'pull_request'
+        shell: bash
+        env:
+          EXPLICIT_AGENCY_KEY: ${{ secrets.KOBEOS_TENANT_KEY }}
+          EXPLICIT_PUBLIC_URL: ${{ vars.KOBEOS_PUBLIC_URL }}
+          WORKERS_URL: ${{ steps.deploy.outputs.workers_url }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "$EXPLICIT_AGENCY_KEY" ]; then
+            AGENCY_KEY="$EXPLICIT_AGENCY_KEY"
+          else
+            AGENCY_KEY="$(printf '%s' "${CLOUDFLARE_API_TOKEN}:${CLOUDFLARE_ACCOUNT_ID}:kazi-agency-v1" | sha256sum | awk '{print $1}')"
+          fi
+          echo "::add-mask::$AGENCY_KEY"
+          printf '%s' "$AGENCY_KEY" | npx --yes wrangler@4 secret put KOBEOS_TENANT_KEY
+
+          PUBLIC_URL="${EXPLICIT_PUBLIC_URL:-$WORKERS_URL}"
+          printf '%s' "$PUBLIC_URL" | npx --yes wrangler@4 secret put KOBEOS_PUBLIC_URL
+
+      - name: Smoke test deployment
+        if: github.event_name != 'pull_request'
+        shell: bash
+        env:
+          WORKERS_URL: ${{ steps.deploy.outputs.workers_url }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 6 --retry-delay 5 "$WORKERS_URL/health"
+          echo
