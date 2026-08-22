@@ -13,13 +13,20 @@ const ALLOWED: Record<string, string> = {
 };
 
 export type StoredFile = { path: string; bytes: number; contentType: string };
+export type StoredFileBody = { body: Buffer; contentType: string };
+
+/** Storage contract shared by the local disk and Cloudflare implementations. */
+export interface UploadStore {
+  save(filename: string, base64: string): StoredFile;
+  read(publicPath: string): StoredFileBody;
+}
 
 /**
- * Poster images, applicant photos and certificate scans. The MVP stores files
- * on disk and hands back a `/uploads/<name>` path; swapping in object storage
- * later only changes this file.
+ * Poster images, applicant photos and certificate scans. The local runtime
+ * stores files on disk. Hosted runtimes can inject another UploadStore without
+ * changing the route or service layers.
  */
-export class UploadService {
+export class UploadService implements UploadStore {
   private readonly config: AppConfig;
 
   constructor(config: AppConfig) {
@@ -50,7 +57,7 @@ export class UploadService {
   }
 
   /** Reads a stored file back, refusing anything that escapes the upload directory. */
-  read(publicPath: string): { body: Buffer; contentType: string } {
+  read(publicPath: string): StoredFileBody {
     const name = normalize(publicPath.replace(/^\/uploads\//, ''));
     if (name.includes('/') || name.includes('..') || name.length === 0) {
       throw AppError.notFound('File not found.');
