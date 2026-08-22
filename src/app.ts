@@ -13,7 +13,7 @@ import { EventBus } from './services/events.ts';
 import { IntakeService } from './services/intake.ts';
 import { MembershipService } from './services/memberships.ts';
 import { SwipeService } from './services/swipe.ts';
-import { UploadService } from './services/uploads.ts';
+import { UploadService, type UploadStore } from './services/uploads.ts';
 
 /** Everything scoped to one recruitment agency. */
 export type TenantContext = {
@@ -33,7 +33,7 @@ export type Platform = {
   config: AppConfig;
   db: DatabaseSync;
   store: Store;
-  uploads: UploadService;
+  uploads: UploadStore;
   /** The tenant created on an empty database - Soko Huru today. */
   defaultTenant: Tenant;
   tenantContext(tenantId: string): TenantContext;
@@ -48,13 +48,17 @@ export type Platform = {
 export type CreatePlatformOptions = {
   config?: Partial<AppConfig>;
   extractor?: JobExtractor;
+  /** Optional database adapter. Cloudflare supplies Durable Object SQLite here. */
+  database?: DatabaseSync;
+  /** Optional upload adapter. Cloudflare supplies durable chunked storage here. */
+  uploads?: UploadStore;
 };
 
 export function createPlatform(options: CreatePlatformOptions = {}): Platform {
   const config: AppConfig = { ...loadConfig(), ...options.config };
-  const db = openDatabase(config.databasePath);
+  const db = options.database ?? openDatabase(config.databasePath);
   const store = new Store(db);
-  const uploads = new UploadService(config);
+  const uploads = options.uploads ?? new UploadService(config);
   const extractor = options.extractor ?? new RuleBasedExtractor();
   const contexts = new Map<string, TenantContext>();
 
@@ -101,6 +105,12 @@ export function createPlatform(options: CreatePlatformOptions = {}): Platform {
     existing !== null
       ? tenantContext(existing.id)
       : createTenant(config.defaultTenantName, config.defaultTenantSlug, config.defaultTenantApiKey);
+
+  // In hosted deployments the bootstrap key is an environment secret. Keep the
+  // stored hash aligned when that secret rotates, without affecting other tenants.
+  if (existing !== null && config.defaultTenantApiKey !== 'dev-agency-key') {
+    store.setTenantApiKey(existing.id, hashSecret(config.defaultTenantApiKey));
+  }
 
   return {
     config,
