@@ -1,0 +1,6 @@
+node_modules/
+*.log
+# Runtime state: the SQLite file and uploaded posters, photos and certificates.
+data/
+.env
+.DS_Store

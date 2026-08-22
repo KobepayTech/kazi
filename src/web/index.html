@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KobeOS - swipe-to-apply recruitment</title>
+<style>
+  :root { --ink:#10211a; --muted:#5b6f66; --line:#dde7e2; --bg:#f2f7f4; --green:#0f7a4f; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:16px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; color:var(--ink); background:var(--bg); }
+  header { background:var(--green); color:#fff; padding:52px 24px; }
+  .wrap { max-width:900px; margin:0 auto; }
+  h1 { margin:0 0 10px; font-size:34px; }
+  header p { margin:0; opacity:.92; max-width:58ch; }
+  main { padding:30px 24px 64px; }
+  h2.section { margin:32px 0 12px; font-size:19px; }
+  ol.flow { display:grid; gap:10px; margin:0; padding:0; list-style:none; counter-reset:step; }
+  ol.flow li { background:#fff; border:1px solid var(--line); border-radius:10px; padding:13px 16px 13px 50px; position:relative; }
+  ol.flow li::before { counter-increment:step; content:counter(step); position:absolute; left:15px; top:13px;
+    width:23px; height:23px; border-radius:50%; background:var(--green); color:#fff; font-size:12px; font-weight:700;
+    display:grid; place-items:center; }
+  .cards { display:grid; gap:14px; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); }
+  .card { background:#fff; border:1px solid var(--line); border-radius:12px; padding:18px; }
+  .card h3 { margin:0 0 6px; font-size:17px; }
+  .card p { margin:0 0 14px; color:var(--muted); font-size:14px; }
+  a.button { display:inline-block; background:var(--green); color:#fff; text-decoration:none; padding:9px 15px;
+             border-radius:8px; font-size:14px; font-weight:600; }
+  code { background:#e7f0ea; padding:2px 6px; border-radius:5px; font-size:13px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>KobeOS</h1>
+    <p>The recruitment agency keeps making the posters it already makes. KobeOS turns each one into a
+       swipe-to-apply job card and gives the employer behind it a private page that fills up in real time.</p>
+  </div>
+</header>
+<main class="wrap">
+  <h2 class="section">The loop</h2>
+  <ol class="flow">
+    <li>The agency uploads an existing job poster or pastes the message.</li>
+    <li>Kobe AI reads the vacancy out of it; staff check the fields beside the original poster.</li>
+    <li>Publishing creates the swipe card and, for a new client, the employer's private link.</li>
+    <li>A paid applicant swipes right and confirms; KobeOS attaches the CV it wrote for them.</li>
+    <li>The employer sees the candidate immediately and shortlists, interviews, hires or rejects.</li>
+    <li>The applicant's status updates the moment the employer acts.</li>
+  </ol>
+
+  <h2 class="section">Open a view</h2>
+  <div class="cards">
+    <div class="card">
+      <h3>Applicant app</h3>
+      <p>Register in one form, get a CV written for you, and swipe through jobs that match your filters.</p>
+      <a class="button" href="/jobs">Open the job feed</a>
+    </div>
+    <div class="card">
+      <h3>Agency admin</h3>
+      <p>Upload a poster, check the extraction, publish, confirm payments and watch every client.</p>
+      <a class="button" href="/admin">Open admin</a>
+    </div>
+    <div class="card">
+      <h3>Employer page</h3>
+      <p>Generated per client at <code>/e/&lt;CODE&gt;</code>. No site for the employer to build.</p>
+      <a class="button" href="/admin">Find a client link</a>
+    </div>
+  </div>
+</main>
+</body>
+</html>

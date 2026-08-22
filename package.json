@@ -1,0 +1,20 @@
+{
+  "name": "kazi",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Kazi by KobeOS - multi-tenant recruitment MVP with swipe-to-apply jobs, generated CVs, memberships, employer pages and Kobe Fit matching",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "start": "node src/bin/serve.ts",
+    "seed": "node src/bin/seed.ts",
+    "test": "node --test \"tests/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  }
+}

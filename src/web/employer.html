@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Recruitment page</title>
+<style>
+  :root { --ink:#10211a; --muted:#5b6f66; --line:#dde7e2; --bg:#f2f7f4; --green:#0f7a4f; --red:#c0392b; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; color:var(--ink); background:var(--bg); }
+  header { background:#0d3b2a; color:#fff; padding:20px 24px; }
+  header h1 { margin:0; font-size:21px; }
+  header p { margin:4px 0 0; opacity:.85; font-size:13px; }
+  main { max-width:1080px; margin:0 auto; padding:22px 20px 64px; display:grid; gap:18px; }
+  .panel { background:#fff; border:1px solid var(--line); border-radius:12px; padding:18px; }
+  .panel h2 { margin:0 0 12px; font-size:16px; display:flex; justify-content:space-between; align-items:center; gap:10px; }
+  .signin { max-width:400px; margin:56px auto; }
+  label { display:block; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:10px 0 4px; }
+  input, select { width:100%; padding:10px; border:1px solid var(--line); border-radius:8px; font:inherit; font-size:15px; background:#fff; }
+  button { font:inherit; font-weight:600; cursor:pointer; border-radius:8px; border:1px solid transparent; padding:8px 13px; font-size:14px; }
+  .primary { background:var(--green); color:#fff; }
+  .ghost { background:#fff; border-color:var(--line); }
+  .danger { background:#fff; border-color:#f0c2bc; color:var(--red); }
+  .link { background:none; border:0; color:var(--green); padding:0; }
+  .tiles { display:grid; gap:10px; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); }
+  .tile { border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
+  .tile b { display:block; font-size:26px; font-variant-numeric:tabular-nums; }
+  .tile span { font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  .job { border-top:1px solid var(--line); padding:12px 0; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:center; }
+  .job h3 { margin:0; font-size:16px; }
+  .job small { color:var(--muted); }
+  .filters { display:grid; gap:10px; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); align-items:end; }
+  .candidate { border:1px solid var(--line); border-radius:10px; padding:15px; margin-bottom:12px; }
+  .candidate h3 { margin:0 0 2px; font-size:17px; }
+  .candidate .meta { color:var(--muted); font-size:13px; margin:0 0 10px; }
+  .facts { display:grid; gap:3px 18px; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); font-size:14px; margin-bottom:10px; }
+  .actions { display:flex; gap:8px; flex-wrap:wrap; }
+  .tag { font-size:12px; font-weight:600; padding:3px 9px; border-radius:999px; background:#e7f0ea; color:var(--green); white-space:nowrap; }
+  .notice { padding:11px 13px; border-radius:8px; font-size:14px; margin-bottom:12px; }
+  .ok { background:#e6f4ec; border:1px solid #b7dfc8; }
+  .err { background:#fbeae8; border:1px solid #f0c2bc; }
+  .live { font-size:12px; color:var(--muted); font-weight:400; }
+  .live b { color:var(--green); }
+  dialog { border:0; border-radius:14px; padding:22px; max-width:560px; width:calc(100% - 40px); }
+  dialog::backdrop { background:rgba(16,33,26,.45); }
+  dialog pre { white-space:pre-wrap; font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; margin:0; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="clientName">Recruitment page</h1>
+  <p id="tagline">Candidates arrive here the moment they apply.</p>
+</header>
+
+<main>
+  <div id="status"></div>
+
+  <section class="panel signin" id="signin">
+    <h2>Sign in</h2>
+    <p style="color:#5b6f66;font-size:13px;margin:0">Enter the access code the agency sent you.</p>
+    <label for="secret">Access code</label>
+    <input id="secret" inputmode="numeric" autocomplete="one-time-code">
+    <button class="primary" id="signinBtn" style="width:100%;margin-top:12px">Open my page</button>
+    <p style="text-align:center;margin:14px 0 0;font-size:14px">
+      <button class="link" id="otpPhone">Send a code to my phone</button> ·
+      <button class="link" id="otpEmail">to my email</button>
+    </p>
+  </section>
+
+  <div id="portal" hidden>
+    <section class="panel">
+      <h2>Positions <span class="live" id="live"></span></h2>
+      <div class="tiles" id="tiles"></div>
+      <div id="jobs"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Post a vacancy
+        <button class="link" id="togglePost">Add one</button></h2>
+      <p style="color:#5b6f66;font-size:13px;margin:0">
+        Optional — you can still just send it to the agency the way you always have.
+        Anything you type here goes to them to check before it reaches applicants.</p>
+
+      <div id="postForm" hidden style="margin-top:14px">
+        <div class="filters">
+          <div><label for="pTitle">Job title</label><input id="pTitle" placeholder="Hotel Attendant"></div>
+          <div><label for="pLocation">Location</label><input id="pLocation" placeholder="Zanzibar"></div>
+          <div><label for="pPositions">Positions</label><input id="pPositions" type="number" min="1" value="1"></div>
+          <div><label for="pCategory">Category</label>
+            <select id="pCategory">
+              <option value="hospitality">Hospitality</option>
+              <option value="customer_care">Customer care</option>
+              <option value="driving">Driving</option>
+              <option value="teaching">Teaching</option>
+              <option value="security">Security</option>
+              <option value="retail">Retail</option>
+              <option value="construction">Construction</option>
+              <option value="domestic">Domestic work</option>
+              <option value="healthcare">Healthcare</option>
+              <option value="it">IT</option>
+              <option value="finance">Finance</option>
+              <option value="sales">Sales</option>
+              <option value="other">Other</option>
+            </select></div>
+        </div>
+        <div class="filters" style="margin-top:10px">
+          <div><label for="pAmount">Salary</label><input id="pAmount" type="number" min="0" placeholder="200"></div>
+          <div><label for="pCurrency">Currency</label>
+            <select id="pCurrency"><option value="TZS">TSh</option><option value="USD">USD</option>
+              <option value="KES">KSh</option><option value="EUR">EUR</option></select></div>
+          <div><label for="pPeriod">Per</label>
+            <select id="pPeriod"><option value="month" selected>Month</option><option value="day">Day</option>
+              <option value="hour">Hour</option><option value="week">Week</option><option value="year">Year</option></select></div>
+          <div><label for="pDeadline">Closing date (optional)</label><input id="pDeadline" type="date"></div>
+        </div>
+        <label for="pDescription">About the job</label>
+        <input id="pDescription" placeholder="What the work involves">
+        <div class="filters" style="margin-top:10px">
+          <div><label for="pLanguages">Languages needed</label><input id="pLanguages" placeholder="English, Swahili"></div>
+          <div><label for="pExperience">Experience</label><input id="pExperience" placeholder="2 years hospitality preferred"></div>
+        </div>
+        <label for="pRequirements">Requirements (one per line)</label>
+        <textarea id="pRequirements" rows="3" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;font:inherit"></textarea>
+        <p style="margin:12px 0 0;font-size:14px;display:flex;gap:18px;flex-wrap:wrap">
+          <label style="text-transform:none;letter-spacing:0;font-size:14px;color:var(--ink);margin:0">
+            <input type="checkbox" id="pAccommodation" style="width:auto"> Accommodation provided</label>
+          <label style="text-transform:none;letter-spacing:0;font-size:14px;color:var(--ink);margin:0">
+            <input type="checkbox" id="pTips" style="width:auto"> Plus tips</label>
+          <label style="text-transform:none;letter-spacing:0;font-size:14px;color:var(--ink);margin:0">
+            <input type="checkbox" id="pCertificate" style="width:auto"> Certificate required</label>
+          <label style="text-transform:none;letter-spacing:0;font-size:14px;color:var(--ink);margin:0">
+            <input type="checkbox" id="pImmediate" style="width:auto"> Immediate start</label>
+        </p>
+        <button class="primary" id="submitPost" style="margin-top:14px">Send to the agency</button>
+      </div>
+
+      <div id="submissions" style="margin-top:14px"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Applicants</h2>
+      <div class="filters">
+        <div><label for="fJob">Job</label><select id="fJob"><option value="">All</option></select></div>
+        <div><label for="fStatus">Status</label><select id="fStatus">
+          <option value="">All</option><option value="applied">New</option><option value="viewed">Viewed</option>
+          <option value="shortlisted">Shortlisted</option><option value="interview">Interview</option>
+          <option value="hired">Hired</option><option value="rejected">Rejected</option></select></div>
+        <div><label for="fLocation">Location</label><input id="fLocation" placeholder="Dar es Salaam"></div>
+        <div><label for="fSearch">Search</label><input id="fSearch" placeholder="name, skill or reference"></div>
+        <div><button class="ghost" id="applyFilters" style="width:100%">Filter</button></div>
+      </div>
+      <div id="candidates" style="margin-top:16px"></div>
+    </section>
+  </div>
+</main>
+
+<dialog id="cvDialog"><h3 id="cvName"></h3><pre id="cvText"></pre>
+  <div style="margin-top:18px;display:flex;gap:10px">
+    <button class="ghost" id="cvClose" style="flex:1">Close</button>
+    <button class="primary" id="cvDownload" style="flex:1">Download</button>
+  </div>
+</dialog>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+const code = location.pathname.split('/')[2] || '';
+let token = sessionStorage.getItem(`kobeos_employer_${code}`) || '';
+let openCv = null;
+
+function notice(kind, text) {
+  $('status').innerHTML = `<div class="notice ${kind}">${text}</div>`;
+  setTimeout(() => { $('status').innerHTML = ''; }, 6000);
+}
+
+async function api(path, options = {}) {
+  const response = await fetch(path, {
+    ...options,
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}`, ...(options.headers || {}) },
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data?.error?.message || `Request failed (${response.status})`);
+  return data;
+}
+
+async function loadHeader() {
+  try {
+    const client = await fetch(`/api/e/${encodeURIComponent(code)}`).then((r) => r.json());
+    if (client.name) {
+      $('clientName').textContent = client.name;
+      $('tagline').textContent = `Candidates from ${client.agency}, live as they apply.`;
+      document.title = `${client.name} - recruitment`;
+    }
+  } catch { /* keep the generic title */ }
+}
+
+function renderDashboard(data) {
+  const t = data.totals;
+  $('tiles').innerHTML = [
+    ['Positions', t.positions], ['Applicants', t.applications], ['New', t.newApplications],
+    ['Viewed', t.viewed], ['Shortlisted', t.shortlisted], ['Interview', t.interview],
+    ['Hired', t.hired], ['Left to fill', t.remainingPositions],
+  ].map(([label, value]) => `<div class="tile"><b>${value}</b><span>${label}</span></div>`).join('');
+
+  $('jobs').innerHTML = data.jobs.map((job) => `
+    <div class="job">
+      <div><h3>${esc(job.title)}</h3>
+        <small>${esc(job.location)} · ${job.applications} applicants · ${job.newApplications} new ·
+          ${job.shortlisted} shortlisted · ${job.hired} hired · ${job.remainingPositions} of ${job.positions} left</small></div>
+      <button class="danger" data-close="${esc(job.jobId)}">Close job</button>
+    </div>`).join('');
+
+  const select = $('fJob');
+  const current = select.value;
+  select.innerHTML = '<option value="">All</option>' +
+    data.jobs.map((job) => `<option value="${esc(job.jobId)}">${esc(job.title)}</option>`).join('');
+  select.value = current;
+
+  $('jobs').querySelectorAll('[data-close]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      if (!confirm('Close this job? Applicants will stop seeing it.')) return;
+      try {
+        await api(`/api/employer/jobs/${button.dataset.close}/close`, { method: 'POST', body: '{}' });
+        notice('ok', 'Job closed.');
+        await refresh();
+      } catch (error) { notice('err', esc(error.message)); }
+    });
+  });
+}
+
+const NEXT = {
+  applied: ['shortlisted', 'rejected'],
+  viewed: ['shortlisted', 'rejected'],
+  shortlisted: ['interview', 'hired', 'rejected'],
+  interview: ['hired', 'rejected'],
+  hired: [], rejected: [], withdrawn: [],
+};
+const LABEL = { shortlisted: 'Shortlist', interview: 'Interview', hired: 'Hire', rejected: 'Reject' };
+
+async function loadCandidates() {
+  const params = new URLSearchParams();
+  for (const [key, id] of Object.entries({ jobId: 'fJob', status: 'fStatus', location: 'fLocation', search: 'fSearch' })) {
+    const value = $(id).value.trim();
+    if (value) params.set(key, value);
+  }
+  const data = await api(`/api/employer/candidates?${params.toString()}`);
+  $('candidates').innerHTML = data.candidates.length === 0
+    ? '<p style="color:#5b6f66">No applicants match these filters yet.</p>'
+    : data.candidates.map((entry) => {
+        const a = entry.applicant, cv = entry.cv, app = entry.application;
+        const actions = (NEXT[app.status] || []).map((next) =>
+          `<button class="${next === 'rejected' ? 'danger' : 'primary'}" data-id="${esc(app.id)}" data-next="${next}">${LABEL[next]}</button>`).join('');
+        return `<div class="candidate">
+          <h3>${esc(a.fullName)} <span class="tag">${esc(entry.statusLabel)}</span></h3>
+          <p class="meta">${esc(a.location)} · ${esc(entry.jobTitle)} · ${esc(app.reference)} ·
+            applied ${new Date(app.createdAt).toLocaleDateString()}</p>
+          <div class="facts">
+            <div>${cv.experienceYears} year(s) experience</div>
+            <div>${esc(cv.educationLevel)}</div>
+            <div>${esc((cv.languages || []).join(' / ') || 'Languages not stated')}</div>
+            <div>${entry.relocation ? esc(entry.relocation) : 'Lives locally'}</div>
+          </div>
+          ${cv.skills.length ? `<p style="font-size:14px;margin:0 0 10px"><small>Skills: ${esc(cv.skills.join(', '))}</small></p>` : ''}
+          ${app.employerNotes ? `<p style="font-size:13px;color:#5b6f66;margin:0 0 10px">Note: ${esc(app.employerNotes)}</p>` : ''}
+          <div class="actions">
+            <button class="ghost" data-cv="${esc(app.id)}">View CV</button>
+            <button class="ghost" data-note="${esc(app.id)}">Add note</button>
+            ${actions}
+          </div>
+        </div>`;
+      }).join('');
+
+  $('candidates').querySelectorAll('[data-next]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      try {
+        await api(`/api/employer/candidates/${button.dataset.id}/status`, {
+          method: 'POST', body: JSON.stringify({ status: button.dataset.next }),
+        });
+        notice('ok', 'Candidate updated. They have been told.');
+        await refresh();
+      } catch (error) { notice('err', esc(error.message)); }
+    });
+  });
+
+  $('candidates').querySelectorAll('[data-cv]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      try {
+        const dossier = await api(`/api/employer/candidates/${button.dataset.cv}`);
+        openCv = dossier;
+        $('cvName').textContent = `${dossier.applicant.fullName} — ${dossier.jobTitle}`;
+        $('cvText').textContent = dossier.cvText;
+        $('cvDialog').showModal();
+        await refresh();
+      } catch (error) { notice('err', esc(error.message)); }
+    });
+  });
+
+  $('candidates').querySelectorAll('[data-note]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const note = prompt('Internal note (only your team sees this)');
+      if (!note) return;
+      try {
+        await api(`/api/employer/candidates/${button.dataset.note}/notes`, { method: 'POST', body: JSON.stringify({ note }) });
+        await loadCandidates();
+      } catch (error) { notice('err', esc(error.message)); }
+    });
+  });
+}
+
+$('cvClose').addEventListener('click', () => $('cvDialog').close());
+$('cvDownload').addEventListener('click', () => {
+  if (!openCv) return;
+  const blob = new Blob([openCv.cvText], { type: 'text/plain' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `${openCv.applicant.fullName.replace(/\s+/g, '-')}-CV.txt`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+});
+
+$('applyFilters').addEventListener('click', () => void loadCandidates());
+
+const SUBMISSION_LABELS = {
+  extracted: 'Waiting for the agency',
+  reviewed: 'Being checked',
+  published: 'Live for applicants',
+  discarded: 'Not published',
+};
+
+async function loadSubmissions() {
+  const data = await api('/api/employer/submissions');
+  $('submissions').innerHTML = data.submissions.length === 0
+    ? ''
+    : `<h3 style="font-size:14px;margin:0 0 6px">Vacancies you sent in</h3>` +
+      data.submissions.map((entry) => `
+        <div class="job" style="padding:9px 0">
+          <div><strong>${esc(entry.title)}</strong> · ${entry.positions} position(s)<br>
+            <small>Sent ${new Date(entry.submittedAt).toLocaleDateString()}</small></div>
+          <span class="tag">${esc(SUBMISSION_LABELS[entry.status] || entry.status)}</span>
+        </div>`).join('');
+}
+
+$('togglePost').addEventListener('click', () => {
+  const form = $('postForm');
+  form.hidden = !form.hidden;
+  $('togglePost').textContent = form.hidden ? 'Add one' : 'Hide';
+});
+
+$('submitPost').addEventListener('click', async () => {
+  try {
+    const result = await api('/api/employer/jobs', {
+      method: 'POST',
+      body: JSON.stringify({
+        title: $('pTitle').value.trim(),
+        location: $('pLocation').value.trim(),
+        category: $('pCategory').value,
+        positions: Number($('pPositions').value || 1),
+        salaryAmountMin: $('pAmount').value ? Number($('pAmount').value) : null,
+        salaryCurrency: $('pCurrency').value,
+        salaryPeriod: $('pPeriod').value,
+        salaryPlusTips: $('pTips').checked,
+        description: $('pDescription').value.trim() || null,
+        requirements: $('pRequirements').value.split('\n').map((s) => s.trim()).filter(Boolean),
+        applicationDeadline: $('pDeadline').value || null,
+        languages: $('pLanguages').value.split(',').map((s) => s.trim()).filter(Boolean),
+        experienceNote: $('pExperience').value.trim() || null,
+        accommodationProvided: $('pAccommodation').checked,
+        certificateRequired: $('pCertificate').checked,
+        immediateStart: $('pImmediate').checked,
+      }),
+    });
+    notice('ok', esc(result.message));
+    $('postForm').hidden = true;
+    $('togglePost').textContent = 'Add one';
+    for (const id of ['pTitle', 'pLocation', 'pAmount', 'pDescription', 'pRequirements', 'pLanguages', 'pExperience']) {
+      $(id).value = '';
+    }
+    await loadSubmissions();
+  } catch (error) { notice('err', esc(error.message)); }
+});
+
+async function refresh() {
+  renderDashboard(await api('/api/employer/dashboard'));
+  await Promise.all([loadCandidates(), loadSubmissions()]);
+}
+
+function listen() {
+  const source = new EventSource(`/api/employer/stream?token=${encodeURIComponent(token)}`);
+  source.onopen = () => { $('live').innerHTML = '<b>live</b>'; };
+  source.onerror = () => { $('live').textContent = 'reconnecting...'; };
+  for (const type of ['application_received', 'application_status_changed', 'job_published', 'job_closed']) {
+    source.addEventListener(type, (event) => {
+      if (type === 'application_received') {
+        const payload = JSON.parse(event.data);
+        notice('ok', `New applicant: ${esc(payload.applicantName)} for ${esc(payload.jobTitle)}.`);
+      }
+      void refresh();
+    });
+  }
+}
+
+async function open() {
+  try {
+    $('signin').hidden = true;
+    $('portal').hidden = false;
+    await refresh();
+    listen();
+  } catch (error) {
+    $('signin').hidden = false;
+    $('portal').hidden = true;
+    notice('err', esc(error.message));
+  }
+}
+
+$('signinBtn').addEventListener('click', async () => {
+  try {
+    const session = await fetch(`/api/e/${encodeURIComponent(code)}/login`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: sessionStorage.getItem(`kobeos_kind_${code}`) || 'access_code', secret: $('secret').value.trim() }),
+    }).then(async (r) => { const d = await r.json(); if (!r.ok) throw new Error(d?.error?.message || 'Sign in failed'); return d; });
+    token = session.token;
+    sessionStorage.setItem(`kobeos_employer_${code}`, token);
+    $('secret').value = '';
+    await open();
+  } catch (error) { notice('err', esc(error.message)); }
+});
+
+async function requestOtp(channel) {
+  try {
+    const result = await fetch(`/api/e/${encodeURIComponent(code)}/otp`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ channel }),
+    }).then(async (r) => { const d = await r.json(); if (!r.ok) throw new Error(d?.error?.message); return d; });
+    sessionStorage.setItem(`kobeos_kind_${code}`, result.kind);
+    notice('ok', `A code is on its way to ${esc(result.maskedDestination)}. ${esc(result.note)}`);
+  } catch (error) { notice('err', esc(error.message)); }
+}
+$('otpPhone').addEventListener('click', () => requestOtp('phone'));
+$('otpEmail').addEventListener('click', () => requestOtp('email'));
+
+void loadHeader();
+if (token) void open();
+</script>
+</body>
+</html>
