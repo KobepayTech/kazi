@@ -2,6 +2,8 @@ import type { TenantStore } from '../data/store.ts';
 import { STATUS_LABELS, STATUS_MESSAGES, flowPosition } from '../domain/applications.ts';
 import { buildJobCard } from '../domain/cards.ts';
 import { byNewest, eligibilityFailures, filterReasons } from '../domain/feed.ts';
+import { evaluateJobFit, fitVerdictLabel } from '../domain/matching.ts';
+import type { JobFit } from '../domain/matching.ts';
 import { checkMembership } from '../domain/plans.ts';
 import { formatSalaryLine } from '../domain/salary.ts';
 import type {
@@ -62,6 +64,8 @@ export type JobDetail = {
   postedThrough: string;
   alreadyApplied: boolean;
   saved: boolean;
+  /** Candidate-specific match explanation when an applicant is signed in. */
+  fit: JobFit | null;
 };
 
 export class SwipeService {
@@ -85,9 +89,12 @@ export class SwipeService {
     return this.store.getEmployer(employerId)?.name ?? 'Employer';
   }
 
-  /** The deck: open jobs that pass the applicant's four filters, newest first. */
+  /**
+   * The deck: open jobs that pass the applicant's filters, ranked by Kobe Fit.
+   * Newest publication time breaks ties so fresh vacancies still surface first.
+   */
   feed(applicantId: string, limit = 20): JobCard[] {
-    this.requireApplicant(applicantId);
+    const applicant = this.requireApplicant(applicantId);
     const preferences = this.store.getPreferences(applicantId);
     const resolved = this.store.listResolvedJobIds(applicantId);
     const hiredCounts = this.store.hiredCountsByJob();
@@ -97,32 +104,41 @@ export class SwipeService {
       .filter((job) => !resolved.has(job.id))
       .filter((job) => eligibilityFailures(job, { hiredCount: hiredCounts.get(job.id) ?? 0 }).length === 0)
       .filter((job) => filterReasons(job, preferences).length === 0)
-      .sort(byNewest)
+      .map((job) => ({ job, fit: evaluateJobFit(applicant, job, preferences) }))
+      .sort((left, right) => right.fit.score - left.fit.score || byNewest(left.job, right.job))
       .slice(0, limit)
-      .map((job) =>
-        buildJobCard(job, {
+      .map(({ job, fit }) => {
+        const card = buildJobCard(job, {
           employerName: this.employerName(job.employerId),
           agencyName: this.tenant.name,
           remainingPositions: Math.max(0, job.positions - (hiredCounts.get(job.id) ?? 0)),
-        }),
-      );
+        });
+        return {
+          ...card,
+          highlights: [`Kobe Fit: ${fit.score}% · ${fitVerdictLabel(fit.verdict)}`, ...card.highlights],
+        };
+      });
   }
 
   savedJobs(applicantId: string): JobCard[] {
-    this.requireApplicant(applicantId);
+    const applicant = this.requireApplicant(applicantId);
+    const preferences = this.store.getPreferences(applicantId);
     const hiredCounts = this.store.hiredCountsByJob();
     const cards: JobCard[] = [];
     for (const jobId of this.store.listSavedJobIds(applicantId)) {
       const job = this.store.getJob(jobId);
       if (job === null) continue;
-      cards.push(
-        buildJobCard(job, {
-          employerName: this.employerName(job.employerId),
-          agencyName: this.tenant.name,
-          remainingPositions: Math.max(0, job.positions - (hiredCounts.get(job.id) ?? 0)),
-          saved: true,
-        }),
-      );
+      const fit = evaluateJobFit(applicant, job, preferences);
+      const card = buildJobCard(job, {
+        employerName: this.employerName(job.employerId),
+        agencyName: this.tenant.name,
+        remainingPositions: Math.max(0, job.positions - (hiredCounts.get(job.id) ?? 0)),
+        saved: true,
+      });
+      cards.push({
+        ...card,
+        highlights: [`Kobe Fit: ${fit.score}% · ${fitVerdictLabel(fit.verdict)}`, ...card.highlights],
+      });
     }
     return cards;
   }
@@ -131,6 +147,8 @@ export class SwipeService {
   jobDetail(jobId: string, applicantId: string | null = null): JobDetail {
     const job = this.store.getJob(jobId);
     if (job === null || job.status === 'draft') throw AppError.notFound('Job not found.');
+    const applicant = applicantId === null ? null : this.store.getApplicant(applicantId);
+    const preferences = applicant === null ? null : this.store.getPreferences(applicant.id);
     return {
       job,
       employerName: this.employerName(job.employerId),
@@ -139,6 +157,7 @@ export class SwipeService {
       postedThrough: this.tenant.name,
       alreadyApplied: applicantId !== null && this.store.findApplication(job.id, applicantId) !== null,
       saved: applicantId !== null && this.store.listSavedJobIds(applicantId).includes(job.id),
+      fit: applicant === null ? null : evaluateJobFit(applicant, job, preferences),
     };
   }
 
