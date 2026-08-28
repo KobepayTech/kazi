@@ -1,6 +1,6 @@
 import type { ApplicationDetail, ApplicationFilters, DraftStatus, TenantStore } from '../data/store.ts';
 import { STATUS_LABELS, STATUS_MESSAGES, assertTransition } from '../domain/applications.ts';
-import { renderCvText } from '../domain/cv.ts';
+import { buildApplicationPackage } from '../domain/application-package.ts';
 import { relocationNote } from '../domain/feed.ts';
 import type {
   Actor,
@@ -48,6 +48,7 @@ export type CandidateCard = ApplicationDetail & {
 export type CandidateDossier = CandidateCard & {
   history: ApplicationStatusChange[];
   cvText: string;
+  coverLetterText: string;
 };
 
 /**
@@ -134,10 +135,21 @@ export class EmployerService {
     }
     const [detail] = this.store.listApplicationsForEmployer(employerId, { applicationId, limit: 1 });
     if (detail === undefined) throw AppError.notFound('Application not found.');
+    const job = this.store.getJob(application.jobId);
+    const employer = this.store.getEmployer(employerId);
+    if (job === null || employer === null) throw AppError.notFound('Application not found.');
+    const applicationPackage = buildApplicationPackage({
+      applicant: detail.applicant,
+      cv: detail.cv,
+      job,
+      employerName: employer.name,
+      preferences: this.store.getPreferences(detail.applicant.id),
+    });
     return {
       ...this.decorate(detail),
       history: this.store.listStatusHistory(applicationId),
-      cvText: renderCvText(detail.cv),
+      cvText: applicationPackage.tailoredCvText,
+      coverLetterText: applicationPackage.coverLetterText,
     };
   }
 
