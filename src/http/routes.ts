@@ -306,6 +306,11 @@ export function createRouter(platform: Platform): Router {
     return { applications: context.swipe.tracker(applicantId) };
   });
 
+  router.get('/api/applicants/:id/applications/:applicationId/package', (ctx) => {
+    const { context, applicantId } = requireApplicant(ctx);
+    return context.swipe.applicationPackage(applicantId, ctx.params.applicationId ?? '');
+  });
+
   router.get('/api/applicants/:id/stream', (ctx) => {
     const { context, applicantId } = requireApplicant(ctx);
     return stream(ctx, context, 'applicant', applicantId);
