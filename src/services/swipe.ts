@@ -46,6 +46,7 @@ export type SwipeOutcome =
   | { result: 'blocked'; code: string; message: string; upgradeTo?: MembershipPlan | null; reference?: string };
 
 export type TrackedApplication = {
+  applicationId: string;
   reference: string;
   jobId: string;
   jobTitle: string;
@@ -286,6 +287,7 @@ export class SwipeService {
     return this.store.listApplicationsForApplicant(applicantId).map((application) => {
       const job = this.store.getJob(application.jobId);
       return {
+        applicationId: application.id,
         reference: application.reference,
         jobId: application.jobId,
         jobTitle: job?.title ?? 'Job',
