@@ -1,5 +1,7 @@
 import type { TenantStore } from '../data/store.ts';
 import { STATUS_LABELS, STATUS_MESSAGES, flowPosition } from '../domain/applications.ts';
+import { buildApplicationPackage } from '../domain/application-package.ts';
+import type { ApplicationPackage } from '../domain/application-package.ts';
 import { buildJobCard } from '../domain/cards.ts';
 import { byNewest, eligibilityFailures, filterReasons } from '../domain/feed.ts';
 import { evaluateJobFit, fitVerdictLabel } from '../domain/matching.ts';
@@ -38,12 +40,13 @@ export type ApplicationConfirmation = {
 
 export type SwipeOutcome =
   | { result: 'confirm_required'; prompt: ApplyPrompt }
-  | { result: 'applied'; application: Application; confirmation: ApplicationConfirmation }
+  | { result: 'applied'; application: Application; confirmation: ApplicationConfirmation; applicationPackage: ApplicationPackage }
   | { result: 'skipped'; jobId: string }
   | { result: 'saved'; jobId: string }
   | { result: 'blocked'; code: string; message: string; upgradeTo?: MembershipPlan | null; reference?: string };
 
 export type TrackedApplication = {
+  applicationId: string;
   reference: string;
   jobId: string;
   jobTitle: string;
@@ -255,9 +258,18 @@ export class SwipeService {
     this.bus.publish('agency', AGENCY_SCOPE_ID, 'application_received', payload);
     this.bus.publish('applicant', applicant.id, 'application_submitted', payload);
 
+    const applicationPackage = buildApplicationPackage({
+      applicant,
+      cv,
+      job,
+      employerName,
+      preferences: this.store.getPreferences(applicant.id),
+    });
+
     return {
       result: 'applied',
       application,
+      applicationPackage,
       confirmation: {
         message: 'Application submitted successfully',
         position: job.title,
@@ -275,6 +287,7 @@ export class SwipeService {
     return this.store.listApplicationsForApplicant(applicantId).map((application) => {
       const job = this.store.getJob(application.jobId);
       return {
+        applicationId: application.id,
         reference: application.reference,
         jobId: application.jobId,
         jobTitle: job?.title ?? 'Job',
@@ -286,6 +299,25 @@ export class SwipeService {
         appliedAt: application.createdAt,
         updatedAt: application.updatedAt,
       };
+    });
+  }
+
+  /** Rebuild the job-specific CV, cover letter and interview prep for an application. */
+  applicationPackage(applicantId: string, applicationId: string): ApplicationPackage {
+    const applicant = this.requireApplicant(applicantId);
+    const application = this.store.getApplication(applicationId);
+    if (application === null || application.applicantId !== applicant.id) {
+      throw AppError.notFound('Application not found.');
+    }
+    const job = this.store.getJob(application.jobId);
+    const cv = this.store.getCv(application.cvId);
+    if (job === null || cv === null) throw AppError.notFound('Application package is not available.');
+    return buildApplicationPackage({
+      applicant,
+      cv,
+      job,
+      employerName: this.employerName(application.employerId),
+      preferences: this.store.getPreferences(applicant.id),
     });
   }
 }

@@ -154,7 +154,12 @@
   </div>
 </main>
 
-<dialog id="cvDialog"><h3 id="cvName"></h3><pre id="cvText"></pre>
+<dialog id="cvDialog"><h3 id="cvName"></h3>
+  <div style="display:flex;gap:8px;margin:0 0 14px">
+    <button class="primary" id="docCv">Tailored CV</button>
+    <button class="ghost" id="docLetter">Cover letter</button>
+  </div>
+  <pre id="cvText"></pre>
   <div style="margin-top:18px;display:flex;gap:10px">
     <button class="ghost" id="cvClose" style="flex:1">Close</button>
     <button class="primary" id="cvDownload" style="flex:1">Download</button>
@@ -167,6 +172,7 @@ const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<'
 const code = location.pathname.split('/')[2] || '';
 let token = sessionStorage.getItem(`kobeos_employer_${code}`) || '';
 let openCv = null;
+let openDocument = 'cv';
 
 function notice(kind, text) {
   $('status').innerHTML = `<div class="notice ${kind}">${text}</div>`;
@@ -287,8 +293,9 @@ async function loadCandidates() {
       try {
         const dossier = await api(`/api/employer/candidates/${button.dataset.cv}`);
         openCv = dossier;
+        openDocument = 'cv';
         $('cvName').textContent = `${dossier.applicant.fullName} — ${dossier.jobTitle}`;
-        $('cvText').textContent = dossier.cvText;
+        showOpenDocument();
         $('cvDialog').showModal();
         await refresh();
       } catch (error) { notice('err', esc(error.message)); }
@@ -307,13 +314,25 @@ async function loadCandidates() {
   });
 }
 
+function showOpenDocument() {
+  if (!openCv) return;
+  const isCv = openDocument === 'cv';
+  $('cvText').textContent = isCv ? openCv.cvText : openCv.coverLetterText;
+  $('docCv').className = isCv ? 'primary' : 'ghost';
+  $('docLetter').className = isCv ? 'ghost' : 'primary';
+}
+
+$('docCv').addEventListener('click', () => { openDocument = 'cv'; showOpenDocument(); });
+$('docLetter').addEventListener('click', () => { openDocument = 'letter'; showOpenDocument(); });
 $('cvClose').addEventListener('click', () => $('cvDialog').close());
 $('cvDownload').addEventListener('click', () => {
   if (!openCv) return;
-  const blob = new Blob([openCv.cvText], { type: 'text/plain' });
+  const isCv = openDocument === 'cv';
+  const text = isCv ? openCv.cvText : openCv.coverLetterText;
+  const blob = new Blob([text], { type: 'text/plain' });
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
-  link.download = `${openCv.applicant.fullName.replace(/\s+/g, '-')}-CV.txt`;
+  link.download = `${openCv.applicant.fullName.replace(/\s+/g, '-')}-${isCv ? 'CV' : 'Cover-Letter'}.txt`;
   link.click();
   URL.revokeObjectURL(link.href);
 });

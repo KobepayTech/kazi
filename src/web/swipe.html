@@ -200,6 +200,18 @@
   <div class="dialog-actions" style="margin-top:18px"><button class="cancel" id="detailClose">Close</button></div>
 </dialog>
 
+<dialog id="packageDialog" style="max-width:760px">
+  <h3 id="packageTitle">Application package</h3>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+    <button class="confirm" id="packageCv">Tailored CV</button>
+    <button class="cancel" id="packageLetter">Cover letter</button>
+    <button class="cancel" id="packagePrep">Interview prep</button>
+  </div>
+  <div id="packageMeta" style="font-size:13px;color:#5b6f66;margin-bottom:10px"></div>
+  <pre id="packageBody" style="white-space:pre-wrap;font:13px/1.55 ui-monospace,monospace;max-height:55vh;overflow:auto"></pre>
+  <div class="dialog-actions" style="margin-top:18px"><button class="cancel" id="packageClose">Close</button></div>
+</dialog>
+
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
@@ -210,6 +222,8 @@ let applicantId = localStorage.getItem('kobeos_applicant') || '';
 let cards = [];
 let pendingApply = null;
 let profileData = null;
+let openPackage = null;
+let packageView = 'cv';
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -329,7 +343,8 @@ async function swipe(jobId, direction, confirmed = false) {
     if (outcome.result === 'applied') {
       const c = outcome.confirmation;
       notice('ok', `<strong>${esc(c.message)}</strong><br>${esc(c.position)} · ${esc(c.company)}<br>
-        Application number <strong>${esc(c.applicationNumber)}</strong>`, true);
+        Application number <strong>${esc(c.applicationNumber)}</strong><br>
+        Your tailored CV, cover letter and interview prep are ready in Applications.`, true);
       cards.shift();
     } else if (outcome.result === 'blocked') {
       const upgrade = outcome.upgradeTo
@@ -392,6 +407,44 @@ async function openDetail(jobId) {
 }
 $('detailClose').addEventListener('click', () => $('detailDialog').close());
 
+function prepText(prep) {
+  const sections = [];
+  if (prep.focusAreas?.length) sections.push('FOCUS AREAS\n' + prep.focusAreas.map((x) => `- ${x}`).join('\n'));
+  if (prep.likelyQuestions?.length) sections.push('LIKELY QUESTIONS\n' + prep.likelyQuestions.map((x) => `- ${x}`).join('\n'));
+  if (prep.starPrompts?.length) sections.push('STAR PRACTICE\n' + prep.starPrompts.map((x) => `- ${x}`).join('\n'));
+  if (prep.questionsToAsk?.length) sections.push('QUESTIONS TO ASK\n' + prep.questionsToAsk.map((x) => `- ${x}`).join('\n'));
+  if (prep.truthReminder) sections.push('IMPORTANT\n' + prep.truthReminder);
+  return sections.join('\n\n');
+}
+
+function renderPackage() {
+  if (!openPackage) return;
+  const fit = openPackage.fit;
+  $('packageMeta').textContent = `Kobe Fit ${fit.score}% · ${fit.verdict} · ${openPackage.language === 'sw' ? 'Swahili' : 'English'}`;
+  $('packageBody').textContent =
+    packageView === 'cv' ? openPackage.tailoredCvText :
+    packageView === 'letter' ? openPackage.coverLetterText :
+    prepText(openPackage.interviewPrep);
+  $('packageCv').className = packageView === 'cv' ? 'confirm' : 'cancel';
+  $('packageLetter').className = packageView === 'letter' ? 'confirm' : 'cancel';
+  $('packagePrep').className = packageView === 'prep' ? 'confirm' : 'cancel';
+}
+
+async function openApplicationPackage(applicationId) {
+  try {
+    openPackage = await api(`/api/applicants/${applicantId}/applications/${applicationId}/package`);
+    packageView = 'cv';
+    $('packageTitle').textContent = 'Your application package';
+    renderPackage();
+    $('packageDialog').showModal();
+  } catch (error) { notice('err', esc(error.message)); }
+}
+
+$('packageCv').addEventListener('click', () => { packageView = 'cv'; renderPackage(); });
+$('packageLetter').addEventListener('click', () => { packageView = 'letter'; renderPackage(); });
+$('packagePrep').addEventListener('click', () => { packageView = 'prep'; renderPackage(); });
+$('packageClose').addEventListener('click', () => $('packageDialog').close());
+
 // ------------------------------------------------------------ memberships
 
 async function loadMembership() {
@@ -445,8 +498,13 @@ async function loadApplications() {
           <small style="color:#5b6f66">${esc(entry.employerName)} · ${esc(entry.reference)}<br>
           Applied ${new Date(entry.appliedAt).toLocaleDateString()}</small>
           <div class="steps">${[0,1,2,3].map((step) => `<span class="${entry.step >= step ? 'on' : ''}"></span>`).join('')}</div>
-          <small style="color:#5b6f66">${esc(entry.statusMessage)}</small>
+          <small style="color:#5b6f66">${esc(entry.statusMessage)}</small><br>
+          <button class="link" data-package="${esc(entry.applicationId)}" style="margin-top:6px">CV · letter · interview prep</button>
         </span><span class="tag">${esc(entry.statusLabel)}</span></div>`).join('');
+
+  $('applicationList').querySelectorAll('[data-package]').forEach((button) => {
+    button.addEventListener('click', () => void openApplicationPackage(button.dataset.package));
+  });
 }
 
 // ---------------------------------------------------------------- profile
