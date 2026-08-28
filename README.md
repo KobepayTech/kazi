@@ -1,6 +1,6 @@
-# KobeOS
+# Kazi
 
-KobeOS turns a recruitment agency's **existing job posts** into swipe-to-apply job
+Kazi by KobeOS turns a recruitment agency's **existing job posts** into swipe-to-apply job
 cards, and gives the employer behind each post a **private page that fills up in
 real time**.
 
@@ -143,11 +143,23 @@ vacancy actually arrived (`poster_image`, `whatsapp_text`, `pasted_text`,
 `manual_entry`, `employer_form`), so the decision can be revisited with real
 numbers rather than a guess.
 
-### Applicant registration and the generated CV
+### Applicant registration and application documents
 
-Registration is one short form. KobeOS writes the CV from it
-(`src/domain/cv.ts`) and rewrites it whenever the profile changes — one CV per
-applicant, no uploads, no versions.
+Registration is one short form. Kazi writes a base CV from it
+(`src/domain/cv.ts`) and rewrites it whenever the profile changes.
+
+When the applicant confirms a right swipe, Kazi also runs the
+`ai-job-search`-inspired application workflow in
+`src/domain/application-package.ts`:
+
+1. evaluate the applicant/job fit;
+2. tailor the CV to the vacancy without inventing experience or achievements;
+3. draft a truthful cover letter in English or Swahili based on the vacancy;
+4. prepare interview questions, STAR prompts and questions for the applicant to ask.
+
+The applicant can reopen this package from **Applications**, and the employer sees
+the tailored CV and cover letter when opening the candidate. The employer does
+not receive an automated hire/reject recommendation.
 
 ### Membership and payment
 
@@ -236,7 +248,8 @@ src/
     salary.ts            parsing and TZS normalisation
     feed.ts              the four filters + eligibility
     plans.ts             package coverage rules
-    cv.ts                CV generation and rendering
+    cv.ts                base CV generation and rendering
+    application-package.ts job-specific CV, cover letter and interview prep
     applications.ts      status flow and permissions
     cards.ts             swipe card assembly
   data/
@@ -283,9 +296,9 @@ tests/                   85 tests
 
 ## Deliberately not in the MVP
 
-Candidate scoring and ranking, video interviews, employer subscription plans,
-complex ATS workflows, WhatsApp and Instagram automation, multiple CV versions,
-interview calendar integration, public company websites, recommendation AI,
+Automated employer-side candidate ranking, video interviews, employer subscription plans,
+complex ATS workflows, WhatsApp and Instagram automation, persisted document version history,
+interview calendar integration, public company websites, open-web recommendation agents,
 automatic mobile-money reconciliation, and parsing uploaded legacy CVs.
 
 Those are V2. The MVP keeps to the loop at the top of this file.
