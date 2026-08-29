@@ -299,9 +299,29 @@ export class SwipeService {
 
   /** The applicant's own status list. */
   tracker(applicantId: string): TrackedApplication[] {
-    this.requireApplicant(applicantId);
+    const applicant = this.requireApplicant(applicantId);
     return this.store.listApplicationsForApplicant(applicantId).map((application) => {
       const job = this.store.getJob(application.jobId);
+      const cv = this.store.getCv(application.cvId);
+      const documents =
+        job === null || cv === null
+          ? {
+              applicationId: application.id,
+              dueAt: application.createdAt,
+              complete: false,
+              overdue: false,
+              remainingMs: 0,
+              satisfiedCount: 0,
+              requiredCount: 0,
+              documents: [],
+            }
+          : applicationDocumentBundle({
+              application,
+              job,
+              applicant,
+              cv,
+              documents: this.store.listApplicantDocuments(applicantId),
+            });
       return {
         applicationId: application.id,
         reference: application.reference,
@@ -314,6 +334,7 @@ export class SwipeService {
         step: flowPosition(application.status),
         appliedAt: application.createdAt,
         updatedAt: application.updatedAt,
+        documents,
       };
     });
   }
