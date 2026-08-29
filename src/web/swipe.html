@@ -267,6 +267,8 @@ let pendingApply = null;
 let profileData = null;
 let openPackage = null;
 let packageView = 'cv';
+let documentState = null;
+let reminderTimer = null;
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -281,6 +283,109 @@ async function api(path, options = {}) {
 function notice(kind, text, sticky = false) {
   $('status').innerHTML = `<div class="notice ${kind}">${text}</div>`;
   if (!sticky) setTimeout(() => { $('status').innerHTML = ''; }, 6000);
+}
+
+async function uploadVaultDocument(kind, file, label = '') {
+  if (!file) throw new Error('Choose a file first.');
+  return api(`/api/applicants/${applicantId}/documents`, {
+    method: 'POST',
+    body: JSON.stringify({
+      kind,
+      label: label || null,
+      filename: file.name,
+      fileBase64: await fileBase64(file),
+    }),
+  });
+}
+
+async function uploadProfilePhoto(file) {
+  if (!file) throw new Error('Choose a photo first.');
+  return api(`/api/applicants/${applicantId}/photo`, {
+    method: 'POST',
+    body: JSON.stringify({ filename: file.name, fileBase64: await fileBase64(file) }),
+  });
+}
+
+function countdownText(dueAt) {
+  const diff = new Date(dueAt).getTime() - Date.now();
+  if (diff <= 0) return 'OVERDUE';
+  const totalMinutes = Math.ceil(diff / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours > 0 ? `${hours}h ${minutes}m left` : `${minutes}m left`;
+}
+
+function updateDocumentCountdowns() {
+  document.querySelectorAll('[data-doc-due]').forEach((element) => {
+    element.textContent = countdownText(element.dataset.docDue);
+    element.classList.toggle('warn', new Date(element.dataset.docDue).getTime() - Date.now() < 6 * 60 * 60 * 1000);
+  });
+}
+
+function requestReminderPermission() {
+  if (!('Notification' in window)) return;
+  Notification.requestPermission().then((permission) => {
+    if (permission === 'granted') notice('ok', 'Document reminder alerts enabled.');
+  });
+}
+
+function notifyMissingDocuments(applications) {
+  const incomplete = applications.filter((entry) => !entry.documents.complete);
+  const bar = $('documentReminder');
+  if (incomplete.length === 0) {
+    bar.innerHTML = '';
+    return;
+  }
+  const missingCount = new Set(incomplete.flatMap((entry) =>
+    entry.documents.documents.filter((doc) => !doc.satisfied).map((doc) => doc.label)
+  )).size;
+  const enable = 'Notification' in window && Notification.permission === 'default'
+    ? '<button class="link" id="enableDocAlerts">Enable alerts</button>' : '';
+  bar.innerHTML = `<div class="notice warn"><strong>Documents need attention.</strong>
+    ${missingCount} document type(s) are still missing from active applications. ${enable}</div>`;
+  $('enableDocAlerts')?.addEventListener('click', requestReminderPermission);
+
+  if ('Notification' in window && Notification.permission === 'granted') {
+    const urgent = incomplete.find((entry) => {
+      const due = new Date(entry.documents.dueAt).getTime() - Date.now();
+      return due <= 12 * 60 * 60 * 1000;
+    });
+    if (urgent) {
+      const key = `kazi_doc_alert_${urgent.applicationId}_${new Date().toISOString().slice(0, 10)}`;
+      if (!sessionStorage.getItem(key)) {
+        const labels = urgent.documents.documents.filter((doc) => !doc.satisfied).map((doc) => doc.label).join(', ');
+        new Notification('Kazi: application documents due', {
+          body: `${urgent.jobTitle}: ${labels}. ${countdownText(urgent.documents.dueAt)}.`,
+        });
+        sessionStorage.setItem(key, '1');
+      }
+    }
+  }
+}
+
+async function uploadMissingDocument(kind) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = kind === 'photo' ? 'image/jpeg,image/png,image/webp' : '.pdf,image/jpeg,image/png,image/webp';
+  input.onchange = async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      if (kind === 'photo') await uploadProfilePhoto(file);
+      else await uploadVaultDocument(kind, file);
+      notice('ok', 'Document saved and attached to matching applications.');
+      const [profile] = await Promise.all([
+        api(`/api/applicants/${applicantId}`),
+        loadDocuments(),
+        loadApplications(),
+      ]);
+      profileData = profile;
+      renderProfile();
+    } catch (error) {
+      notice('err', esc(error.message));
+    }
+  };
+  input.click();
 }
 
 // ---------------------------------------------------------------- the deck
@@ -385,9 +490,13 @@ async function swipe(jobId, direction, confirmed = false) {
     if (outcome.result === 'confirm_required') { askToApplyFromPrompt(outcome.prompt); return; }
     if (outcome.result === 'applied') {
       const c = outcome.confirmation;
-      notice('ok', `<strong>${esc(c.message)}</strong><br>${esc(c.position)} · ${esc(c.company)}<br>
+      const missing = outcome.documents?.documents?.filter((doc) => !doc.satisfied) ?? [];
+      const documentLine = missing.length === 0
+        ? 'Your application documents are complete.'
+        : `Missing: ${missing.map((doc) => esc(doc.label)).join(', ')}. Submit them within 24 hours from My applications.`;
+      notice(missing.length === 0 ? 'ok' : 'warn', `<strong>${esc(c.message)}</strong><br>${esc(c.position)} · ${esc(c.company)}<br>
         Application number <strong>${esc(c.applicationNumber)}</strong><br>
-        Your tailored CV, cover letter and interview prep are ready in Applications.`, true);
+        ${documentLine}<br>Your tailored CV, cover letter and interview prep are ready in Applications.`, true);
       cards.shift();
     } else if (outcome.result === 'blocked') {
       const upgrade = outcome.upgradeTo
@@ -408,7 +517,7 @@ async function swipe(jobId, direction, confirmed = false) {
 
 function askToApply(card) {
   askToApplyFromPrompt({ jobId: card.jobId, title: card.title, employerName: card.employerName,
-                         message: 'Your CV will be shared with this employer.' });
+                         message: 'Your CV, photo and required documents already on file will be shared. Missing items can be added within 24 hours.' });
 }
 
 function askToApplyFromPrompt(prompt) {
