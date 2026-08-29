@@ -1,6 +1,7 @@
 import type { ApplicationDetail, ApplicationFilters, DraftStatus, TenantStore } from '../data/store.ts';
 import { STATUS_LABELS, STATUS_MESSAGES, assertTransition } from '../domain/applications.ts';
 import { buildApplicationPackage } from '../domain/application-package.ts';
+import { applicationDocumentBundle, type ApplicationDocumentBundle } from '../domain/documents.ts';
 import { relocationNote } from '../domain/feed.ts';
 import type {
   Actor,
@@ -43,6 +44,7 @@ export type CandidateCard = ApplicationDetail & {
   statusLabel: string;
   /** "Ready to relocate", shown under the candidate's location. */
   relocation: string | null;
+  documents: ApplicationDocumentBundle;
 };
 
 export type CandidateDossier = CandidateCard & {
@@ -112,10 +114,30 @@ export class EmployerService {
 
   private decorate(detail: ApplicationDetail): CandidateCard {
     const job = this.store.getJob(detail.application.jobId);
+    const documents =
+      job === null
+        ? {
+            applicationId: detail.application.id,
+            dueAt: detail.application.createdAt,
+            complete: false,
+            overdue: false,
+            remainingMs: 0,
+            satisfiedCount: 0,
+            requiredCount: 0,
+            documents: [],
+          }
+        : applicationDocumentBundle({
+            application: detail.application,
+            job,
+            applicant: detail.applicant,
+            cv: detail.cv,
+            documents: this.store.listApplicantDocuments(detail.applicant.id),
+          });
     return {
       ...detail,
       statusLabel: STATUS_LABELS[detail.application.status],
       relocation: job === null ? null : relocationNote(detail.applicant, job),
+      documents,
     };
   }
 

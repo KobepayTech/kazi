@@ -148,7 +148,23 @@
         <label for="rSkills">Skills</label><input id="rSkills" placeholder="Housekeeping, Guest relations">
         <label for="rLanguages">Languages</label><input id="rLanguages" placeholder="English, Swahili">
         <label><input type="checkbox" id="rRelocate" style="width:auto"> I can relocate for work</label>
-        <button class="primary" id="registerBtn">Create my account and CV</button>
+
+        <label for="rPhoto">Profile photo</label>
+        <input id="rPhoto" type="file" accept="image/jpeg,image/png,image/webp">
+        <small style="display:block;color:var(--muted);margin-top:4px">Required. This photo is sent with your applications.</small>
+
+        <label for="rCvMode">CV</label>
+        <select id="rCvMode">
+          <option value="create">Create my CV with Kazi</option>
+          <option value="upload">Upload my existing CV</option>
+        </select>
+        <div id="rCvUploadBox" hidden>
+          <label for="rCvFile">Upload CV (PDF)</label>
+          <input id="rCvFile" type="file" accept="application/pdf">
+        </div>
+        <small style="display:block;color:var(--muted);margin-top:4px">You can replace your CV later from Profile.</small>
+
+        <button class="primary" id="registerBtn">Create my account</button>
       </div>
     </section>
 
@@ -164,7 +180,10 @@
     </section>
 
     <!-- applications --------------------------------------------------- -->
-    <section id="applications" hidden><div class="panel" id="applicationList"></div></section>
+    <section id="applications" hidden>
+      <div id="documentReminder"></div>
+      <div class="panel" id="applicationList"></div>
+    </section>
 
     <!-- profile -------------------------------------------------------- -->
     <section id="profile" hidden>
@@ -181,6 +200,24 @@
           <option value="true">Only jobs requiring certificates</option>
         </select>
         <button class="primary" id="saveFilters">Save filters</button>
+      </div>
+      <div class="panel" id="documentBox">
+        <strong>Photo & documents</strong>
+        <p style="font-size:13px;color:var(--muted);margin:6px 0 10px">Kazi reuses these automatically when a job asks for them.</p>
+        <div id="documentList"></div>
+        <label for="docKind">Add a document</label>
+        <select id="docKind">
+          <option value="cv">CV</option>
+          <option value="certificate">Certificate / qualification</option>
+          <option value="licence">Licence</option>
+          <option value="identity">ID / passport</option>
+          <option value="other">Other</option>
+        </select>
+        <label for="docFile">File</label>
+        <input id="docFile" type="file" accept=".pdf,image/jpeg,image/png,image/webp">
+        <label for="docLabel">Label (optional)</label>
+        <input id="docLabel" placeholder="Driving licence, degree certificate">
+        <button class="primary" id="uploadDocument">Save document</button>
       </div>
       <div class="panel" id="cvBox"></div>
     </section>
@@ -216,6 +253,12 @@
 const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 const list = (v) => v.split(',').map((s) => s.trim()).filter(Boolean);
+const fileBase64 = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result || ''));
+  reader.onerror = () => reject(new Error('Could not read that file.'));
+  reader.readAsDataURL(file);
+});
 
 let token = localStorage.getItem('kobeos_token') || '';
 let applicantId = localStorage.getItem('kobeos_applicant') || '';
@@ -224,6 +267,8 @@ let pendingApply = null;
 let profileData = null;
 let openPackage = null;
 let packageView = 'cv';
+let documentState = null;
+let reminderTimer = null;
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -238,6 +283,109 @@ async function api(path, options = {}) {
 function notice(kind, text, sticky = false) {
   $('status').innerHTML = `<div class="notice ${kind}">${text}</div>`;
   if (!sticky) setTimeout(() => { $('status').innerHTML = ''; }, 6000);
+}
+
+async function uploadVaultDocument(kind, file, label = '') {
+  if (!file) throw new Error('Choose a file first.');
+  return api(`/api/applicants/${applicantId}/documents`, {
+    method: 'POST',
+    body: JSON.stringify({
+      kind,
+      label: label || null,
+      filename: file.name,
+      fileBase64: await fileBase64(file),
+    }),
+  });
+}
+
+async function uploadProfilePhoto(file) {
+  if (!file) throw new Error('Choose a photo first.');
+  return api(`/api/applicants/${applicantId}/photo`, {
+    method: 'POST',
+    body: JSON.stringify({ filename: file.name, fileBase64: await fileBase64(file) }),
+  });
+}
+
+function countdownText(dueAt) {
+  const diff = new Date(dueAt).getTime() - Date.now();
+  if (diff <= 0) return 'OVERDUE';
+  const totalMinutes = Math.ceil(diff / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours > 0 ? `${hours}h ${minutes}m left` : `${minutes}m left`;
+}
+
+function updateDocumentCountdowns() {
+  document.querySelectorAll('[data-doc-due]').forEach((element) => {
+    element.textContent = countdownText(element.dataset.docDue);
+    element.classList.toggle('warn', new Date(element.dataset.docDue).getTime() - Date.now() < 6 * 60 * 60 * 1000);
+  });
+}
+
+function requestReminderPermission() {
+  if (!('Notification' in window)) return;
+  Notification.requestPermission().then((permission) => {
+    if (permission === 'granted') notice('ok', 'Document reminder alerts enabled.');
+  });
+}
+
+function notifyMissingDocuments(applications) {
+  const incomplete = applications.filter((entry) => !entry.documents.complete);
+  const bar = $('documentReminder');
+  if (incomplete.length === 0) {
+    bar.innerHTML = '';
+    return;
+  }
+  const missingCount = new Set(incomplete.flatMap((entry) =>
+    entry.documents.documents.filter((doc) => !doc.satisfied).map((doc) => doc.label)
+  )).size;
+  const enable = 'Notification' in window && Notification.permission === 'default'
+    ? '<button class="link" id="enableDocAlerts">Enable alerts</button>' : '';
+  bar.innerHTML = `<div class="notice warn"><strong>Documents need attention.</strong>
+    ${missingCount} document type(s) are still missing from active applications. ${enable}</div>`;
+  $('enableDocAlerts')?.addEventListener('click', requestReminderPermission);
+
+  if ('Notification' in window && Notification.permission === 'granted') {
+    const urgent = incomplete.find((entry) => {
+      const due = new Date(entry.documents.dueAt).getTime() - Date.now();
+      return due <= 12 * 60 * 60 * 1000;
+    });
+    if (urgent) {
+      const key = `kazi_doc_alert_${urgent.applicationId}_${new Date().toISOString().slice(0, 10)}`;
+      if (!sessionStorage.getItem(key)) {
+        const labels = urgent.documents.documents.filter((doc) => !doc.satisfied).map((doc) => doc.label).join(', ');
+        new Notification('Kazi: application documents due', {
+          body: `${urgent.jobTitle}: ${labels}. ${countdownText(urgent.documents.dueAt)}.`,
+        });
+        sessionStorage.setItem(key, '1');
+      }
+    }
+  }
+}
+
+async function uploadMissingDocument(kind) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = kind === 'photo' ? 'image/jpeg,image/png,image/webp' : '.pdf,image/jpeg,image/png,image/webp';
+  input.onchange = async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      if (kind === 'photo') await uploadProfilePhoto(file);
+      else await uploadVaultDocument(kind, file);
+      notice('ok', 'Document saved and attached to matching applications.');
+      const [profile] = await Promise.all([
+        api(`/api/applicants/${applicantId}`),
+        loadDocuments(),
+        loadApplications(),
+      ]);
+      profileData = profile;
+      renderProfile();
+    } catch (error) {
+      notice('err', esc(error.message));
+    }
+  };
+  input.click();
 }
 
 // ---------------------------------------------------------------- the deck
@@ -342,9 +490,13 @@ async function swipe(jobId, direction, confirmed = false) {
     if (outcome.result === 'confirm_required') { askToApplyFromPrompt(outcome.prompt); return; }
     if (outcome.result === 'applied') {
       const c = outcome.confirmation;
-      notice('ok', `<strong>${esc(c.message)}</strong><br>${esc(c.position)} · ${esc(c.company)}<br>
+      const missing = outcome.documents?.documents?.filter((doc) => !doc.satisfied) ?? [];
+      const documentLine = missing.length === 0
+        ? 'Your application documents are complete.'
+        : `Missing: ${missing.map((doc) => esc(doc.label)).join(', ')}. Submit them within 24 hours from My applications.`;
+      notice(missing.length === 0 ? 'ok' : 'warn', `<strong>${esc(c.message)}</strong><br>${esc(c.position)} · ${esc(c.company)}<br>
         Application number <strong>${esc(c.applicationNumber)}</strong><br>
-        Your tailored CV, cover letter and interview prep are ready in Applications.`, true);
+        ${documentLine}<br>Your tailored CV, cover letter and interview prep are ready in Applications.`, true);
       cards.shift();
     } else if (outcome.result === 'blocked') {
       const upgrade = outcome.upgradeTo
@@ -365,7 +517,7 @@ async function swipe(jobId, direction, confirmed = false) {
 
 function askToApply(card) {
   askToApplyFromPrompt({ jobId: card.jobId, title: card.title, employerName: card.employerName,
-                         message: 'Your CV will be shared with this employer.' });
+                         message: 'Your CV, photo and required documents already on file will be shared. Missing items can be added within 24 hours.' });
 }
 
 function askToApplyFromPrompt(prompt) {
@@ -491,34 +643,65 @@ async function loadMembership() {
 
 async function loadApplications() {
   const data = await api(`/api/applicants/${applicantId}/applications`);
+  notifyMissingDocuments(data.applications);
+
   $('applicationList').innerHTML = data.applications.length === 0
     ? '<p style="color:#5b6f66;margin:0">You have not applied for anything yet.</p>'
-    : data.applications.map((entry) => `
-        <div class="row"><span><strong>${esc(entry.jobTitle)}</strong><br>
+    : data.applications.map((entry) => {
+        const bundle = entry.documents;
+        const missing = bundle.documents.filter((doc) => !doc.satisfied);
+        const docs = `<div style="margin-top:10px;padding:10px;border:1px solid var(--line);border-radius:10px">
+          <div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
+            <strong style="font-size:13px">Documents ${bundle.satisfiedCount}/${bundle.requiredCount}</strong>
+            <span class="tag" data-doc-due="${esc(bundle.dueAt)}">${bundle.complete ? 'Complete' : countdownText(bundle.dueAt)}</span>
+          </div>
+          <div style="margin-top:6px;font-size:13px">
+            ${bundle.documents.map((doc) => `<div style="display:flex;justify-content:space-between;gap:10px;padding:4px 0">
+              <span>${doc.satisfied ? '✓' : '⚠'} ${esc(doc.label)}</span>
+              ${doc.satisfied
+                ? (doc.filePath ? `<a class="link" href="${esc(doc.filePath)}" target="_blank">View</a>` : '<small>Ready</small>')
+                : `<button class="link" data-upload-missing="${esc(doc.kind)}">Add now</button>`}
+            </div>`).join('')}
+          </div>
+          ${missing.length ? `<small style="display:block;color:var(--muted);margin-top:6px">Submit missing items by ${new Date(bundle.dueAt).toLocaleString()}.</small>` : ''}
+        </div>`;
+
+        return `<div class="row"><span style="min-width:0;flex:1"><strong>${esc(entry.jobTitle)}</strong><br>
           <small style="color:#5b6f66">${esc(entry.employerName)} · ${esc(entry.reference)}<br>
           Applied ${new Date(entry.appliedAt).toLocaleDateString()}</small>
           <div class="steps">${[0,1,2,3].map((step) => `<span class="${entry.step >= step ? 'on' : ''}"></span>`).join('')}</div>
           <small style="color:#5b6f66">${esc(entry.statusMessage)}</small><br>
           <button class="link" data-package="${esc(entry.applicationId)}" style="margin-top:6px">CV · letter · interview prep</button>
-        </span><span class="tag">${esc(entry.statusLabel)}</span></div>`).join('');
+          ${docs}
+        </span><span class="tag">${esc(entry.statusLabel)}</span></div>`;
+      }).join('');
 
   $('applicationList').querySelectorAll('[data-package]').forEach((button) => {
     button.addEventListener('click', () => void openApplicationPackage(button.dataset.package));
   });
+  $('applicationList').querySelectorAll('[data-upload-missing]').forEach((button) => {
+    button.addEventListener('click', () => void uploadMissingDocument(button.dataset.uploadMissing));
+  });
+
+  updateDocumentCountdowns();
+  if (reminderTimer === null) reminderTimer = setInterval(updateDocumentCountdowns, 30_000);
 }
 
 // ---------------------------------------------------------------- profile
 
 function renderProfile() {
   const { applicant, preferences, cv } = profileData;
-  $('profileBox').innerHTML = `<strong>${esc(applicant.fullName)}</strong>
+  $('profileBox').innerHTML = `<div style="display:flex;gap:12px;align-items:center">
+      ${applicant.photoPath
+        ? `<img src="${esc(applicant.photoPath)}" alt="Profile photo" style="width:64px;height:64px;object-fit:cover;border-radius:50%;border:1px solid var(--line)">`
+        : '<div style="width:64px;height:64px;border-radius:50%;background:#e7f0ea;display:grid;place-items:center">No photo</div>'}
+      <div><strong>${esc(applicant.fullName)}</strong><br><small style="color:var(--muted)">${esc(applicant.location)}</small></div>
+    </div>
     <div class="row"><span>Phone</span><span>${esc(applicant.phone)}</span></div>
-    <div class="row"><span>Location</span><span>${esc(applicant.location)}</span></div>
     <div class="row"><span>Experience</span><span>${applicant.experienceYears} year(s)</span></div>
     <div class="row"><span>Education</span><span>${esc(applicant.educationLevel)}</span></div>`;
-  $('cvBox').innerHTML = `<strong>Your CV</strong>
-    <p style="font-size:13px;color:#5b6f66;margin:6px 0 10px">Written for you from your profile and sent
-      automatically when you apply.</p>
+  $('cvBox').innerHTML = `<strong>Kazi-created CV</strong>
+    <p style="font-size:13px;color:#5b6f66;margin:6px 0 10px">Kazi keeps this structured CV available for matching and tailored applications. If you upload your own CV, employers receive that file too.</p>
     <pre style="white-space:pre-wrap;font:13px/1.5 ui-monospace,monospace;margin:0">${esc(cvText)}</pre>`;
   $('fCategories').value = preferences.categories.join(', ');
   $('fLocations').value = preferences.locations.join(', ');
@@ -527,7 +710,62 @@ function renderProfile() {
   void cv;
 }
 
+function renderDocumentVault() {
+  if (!documentState) return;
+  const docs = documentState.documents || [];
+  const cvDoc = docs.find((doc) => doc.kind === 'cv');
+  const otherDocs = docs.filter((doc) => doc.kind !== 'cv');
+
+  $('documentList').innerHTML = `
+    <div class="row"><span>Profile photo</span><span>
+      ${documentState.photoPath ? '<span class="tag">Ready</span>' : '<span class="tag">Missing</span>'}
+      <button class="link" id="replacePhoto" style="margin-left:6px">${documentState.photoPath ? 'Replace' : 'Add'}</button>
+    </span></div>
+    <div class="row"><span>CV</span><span>
+      <span class="tag">${cvDoc ? 'Uploaded' : 'Kazi-created'}</span>
+      ${cvDoc ? `<a class="link" href="${esc(cvDoc.filePath)}" target="_blank" style="margin-left:6px">View</a>
+        <button class="link" data-delete-doc="${esc(cvDoc.id)}" style="margin-left:6px">Use Kazi CV</button>` : ''}
+    </span></div>
+    ${otherDocs.map((doc) => `<div class="row"><span>${esc(doc.label)}<br><small style="color:var(--muted)">${esc(doc.kind)}</small></span>
+      <span><a class="link" href="${esc(doc.filePath)}" target="_blank">View</a>
+      <button class="link" data-delete-doc="${esc(doc.id)}" style="margin-left:6px">Remove</button></span></div>`).join('')}
+  `;
+
+  $('replacePhoto')?.addEventListener('click', () => void uploadMissingDocument('photo'));
+  $('documentList').querySelectorAll('[data-delete-doc]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      try {
+        await api(`/api/applicants/${applicantId}/documents/${encodeURIComponent(button.dataset.deleteDoc)}`, { method: 'DELETE' });
+        await Promise.all([loadDocuments(), loadApplications()]);
+        notice('ok', 'Document removed.');
+      } catch (error) { notice('err', esc(error.message)); }
+    });
+  });
+}
+
+async function loadDocuments() {
+  documentState = await api(`/api/applicants/${applicantId}/documents`);
+  renderDocumentVault();
+  return documentState;
+}
+
 let cvText = '';
+
+$('uploadDocument').addEventListener('click', async () => {
+  const file = $('docFile').files?.[0];
+  const kind = $('docKind').value;
+  try {
+    await uploadVaultDocument(kind, file, $('docLabel').value.trim());
+    $('docFile').value = '';
+    $('docLabel').value = '';
+    await Promise.all([loadDocuments(), loadApplications()]);
+    notice('ok', 'Document saved. Kazi will attach it automatically when needed.');
+  } catch (error) { notice('err', esc(error.message)); }
+});
+
+$('docKind').addEventListener('change', () => {
+  $('docFile').accept = $('docKind').value === 'cv' ? 'application/pdf' : '.pdf,image/jpeg,image/png,image/webp';
+});
 
 $('saveFilters').addEventListener('click', async () => {
   try {
@@ -594,7 +832,7 @@ async function start() {
   $('tenantLine').textContent = `Jobs through ${plans.tenant}`;
   renderProfile();
   showTab('deck');
-  await Promise.all([loadMembership(), loadFeed(), loadApplications()]);
+  await Promise.all([loadMembership(), loadFeed(), loadApplications(), loadDocuments()]);
   listen();
 }
 
@@ -606,6 +844,10 @@ function saveSession(session, id) {
 }
 
 $('showRegister').addEventListener('click', () => { $('registerPanel').hidden = !$('registerPanel').hidden; });
+
+$('rCvMode').addEventListener('change', () => {
+  $('rCvUploadBox').hidden = $('rCvMode').value !== 'upload';
+});
 
 $('loginBtn').addEventListener('click', async () => {
   try {
@@ -619,7 +861,22 @@ $('loginBtn').addEventListener('click', async () => {
 });
 
 $('registerBtn').addEventListener('click', async () => {
+  const photo = $('rPhoto').files?.[0];
+  const cvMode = $('rCvMode').value;
+  const cvFile = $('rCvFile').files?.[0];
+
+  if (!photo) {
+    notice('warn', 'Add a profile photo before creating your account.', true);
+    return;
+  }
+  if (cvMode === 'upload' && !cvFile) {
+    notice('warn', 'Choose your CV PDF, or select “Create my CV with Kazi”.', true);
+    return;
+  }
+
   try {
+    $('registerBtn').disabled = true;
+    $('registerBtn').textContent = 'Creating account…';
     const result = await fetch('/api/applicants/register', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -637,10 +894,21 @@ $('registerBtn').addEventListener('click', async () => {
         willingToRelocate: $('rRelocate').checked,
       }),
     }).then(async (r) => { const d = await r.json(); if (!r.ok) throw new Error(d?.error?.message); return d; });
+
     saveSession(result.session, result.applicant.id);
+    await uploadProfilePhoto(photo);
+    if (cvMode === 'upload') await uploadVaultDocument('cv', cvFile, 'Uploaded CV');
+
     await start();
-    notice('ok', 'Account created. KobeOS has written your CV.');
-  } catch (error) { notice('err', esc(error.message || 'Could not register.')); }
+    notice('ok', cvMode === 'upload'
+      ? 'Account created. Your photo and CV are ready for applications.'
+      : 'Account created. Your photo is saved and Kazi created your CV.');
+  } catch (error) {
+    notice('err', esc(error.message || 'Could not register.'));
+  } finally {
+    $('registerBtn').disabled = false;
+    $('registerBtn').textContent = 'Create my account';
+  }
 });
 
 $('signOut').addEventListener('click', () => {

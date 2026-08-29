@@ -69,6 +69,20 @@ CREATE TABLE IF NOT EXISTS cvs (
   generated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS applicant_documents (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  applicant_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  label TEXT NOT NULL,
+  file_path TEXT NOT NULL,
+  filename TEXT NOT NULL,
+  content_type TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_applicant_documents_applicant
+  ON applicant_documents(tenant_id, applicant_id, kind, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS membership_plans (
   tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   code TEXT NOT NULL,

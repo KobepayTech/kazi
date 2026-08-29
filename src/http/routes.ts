@@ -7,6 +7,7 @@ import { STATUS_LABELS } from '../domain/applications.ts';
 import { APPLICATION_STATUSES, JOB_CATEGORIES } from '../domain/types.ts';
 import type {
   Actor,
+  ApplicantDocumentKind,
   ApplicationStatus,
   Currency,
   EducationLevel,
@@ -239,17 +240,66 @@ export function createRouter(platform: Platform): Router {
 
   router.post('/api/applicants/:id/certificates', (ctx) => {
     const { context, applicantId } = requireApplicant(ctx);
-    const stored = platform.uploads.save(str(ctx.body, 'filename'), str(ctx.body, 'fileBase64'));
-    return context.applicants.addCertificate(applicantId, {
-      label: optStr(ctx.body, 'label') ?? 'Certificate',
+    const filename = str(ctx.body, 'filename');
+    const label = optStr(ctx.body, 'label') ?? 'Certificate';
+    const stored = platform.uploads.save(filename, str(ctx.body, 'fileBase64'));
+    const cv = context.applicants.addCertificate(applicantId, {
+      label,
       filePath: stored.path,
     });
+    const document = context.applicants.addDocument(applicantId, {
+      kind: 'certificate',
+      label,
+      filePath: stored.path,
+      filename,
+      contentType: stored.contentType,
+    });
+    return { cv, document };
   });
 
   router.post('/api/applicants/:id/photo', (ctx) => {
     const { context, applicantId } = requireApplicant(ctx);
     const stored = platform.uploads.save(str(ctx.body, 'filename'), str(ctx.body, 'fileBase64'));
     return context.applicants.updateProfile(applicantId, { photoPath: stored.path });
+  });
+
+  router.get('/api/applicants/:id/documents', (ctx) => {
+    const { context, applicantId } = requireApplicant(ctx);
+    const applicant = context.store.getApplicant(applicantId);
+    return {
+      photoPath: applicant?.photoPath ?? null,
+      cvMode: context.store.listApplicantDocuments(applicantId, 'cv').length > 0 ? 'uploaded' : 'generated',
+      documents: context.applicants.documents(applicantId),
+    };
+  });
+
+  router.post('/api/applicants/:id/documents', (ctx) => {
+    const { context, applicantId } = requireApplicant(ctx);
+    const kind = str(ctx.body, 'kind') as ApplicantDocumentKind;
+    if (!['cv', 'certificate', 'licence', 'identity', 'other'].includes(kind)) {
+      throw AppError.badRequest('invalid_document_kind', 'Unknown document type.');
+    }
+    const filename = str(ctx.body, 'filename');
+    const stored = platform.uploads.save(filename, str(ctx.body, 'fileBase64'));
+    return context.applicants.addDocument(applicantId, {
+      kind,
+      label: optStr(ctx.body, 'label') ?? (
+        kind === 'cv' ? 'Uploaded CV' :
+        kind === 'licence' ? 'Licence' :
+        kind === 'identity' ? 'ID / passport' :
+        kind === 'certificate' ? 'Certificate' : 'Document'
+      ),
+      filePath: stored.path,
+      filename,
+      contentType: stored.contentType,
+    });
+  });
+
+  router.delete('/api/applicants/:id/documents/:documentId', (ctx) => {
+    const { context, applicantId } = requireApplicant(ctx);
+    const removed = context.applicants.removeDocument(applicantId, ctx.params.documentId ?? '');
+    if (!removed) throw AppError.notFound('Document not found.');
+    return { removed: true };
   });
 
   // ------------------------------------------------------ membership & pay
