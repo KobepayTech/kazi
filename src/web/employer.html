@@ -160,6 +160,7 @@
     <button class="ghost" id="docLetter">Cover letter</button>
   </div>
   <pre id="cvText"></pre>
+  <div id="candidateFiles" style="margin-top:14px"></div>
   <div style="margin-top:18px;display:flex;gap:10px">
     <button class="ghost" id="cvClose" style="flex:1">Close</button>
     <button class="primary" id="cvDownload" style="flex:1">Download</button>
@@ -257,9 +258,13 @@ async function loadCandidates() {
         const actions = (NEXT[app.status] || []).map((next) =>
           `<button class="${next === 'rejected' ? 'danger' : 'primary'}" data-id="${esc(app.id)}" data-next="${next}">${LABEL[next]}</button>`).join('');
         return `<div class="candidate">
-          <h3>${esc(a.fullName)} <span class="tag">${esc(entry.statusLabel)}</span></h3>
-          <p class="meta">${esc(a.location)} · ${esc(entry.jobTitle)} · ${esc(app.reference)} ·
-            applied ${new Date(app.createdAt).toLocaleDateString()}</p>
+          <div style="display:flex;gap:12px;align-items:flex-start">
+            ${a.photoPath ? `<img src="${esc(a.photoPath)}" alt="${esc(a.fullName)}" style="width:58px;height:58px;border-radius:50%;object-fit:cover;border:1px solid var(--line)">` : ''}
+            <div style="flex:1"><h3 style="margin-top:0">${esc(a.fullName)} <span class="tag">${esc(entry.statusLabel)}</span></h3>
+              <p class="meta">${esc(a.location)} · ${esc(entry.jobTitle)} · ${esc(app.reference)} ·
+              applied ${new Date(app.createdAt).toLocaleDateString()}</p></div>
+            <span class="tag">${entry.documents.complete ? 'Docs complete' : `Docs ${entry.documents.satisfiedCount}/${entry.documents.requiredCount}`}</span>
+          </div>
           <div class="facts">
             <div>${cv.experienceYears} year(s) experience</div>
             <div>${esc(cv.educationLevel)}</div>
@@ -320,6 +325,18 @@ function showOpenDocument() {
   $('cvText').textContent = isCv ? openCv.cvText : openCv.coverLetterText;
   $('docCv').className = isCv ? 'primary' : 'ghost';
   $('docLetter').className = isCv ? 'ghost' : 'primary';
+
+  const bundle = openCv.documents;
+  $('candidateFiles').innerHTML = `<div style="padding:12px;border:1px solid var(--line);border-radius:10px">
+    <strong>Application documents — ${bundle.complete ? 'complete' : `${bundle.satisfiedCount}/${bundle.requiredCount} ready`}</strong>
+    ${bundle.documents.map((doc) => `<div class="row">
+      <span>${doc.satisfied ? '✓' : '⚠'} ${esc(doc.label)}<br><small style="color:var(--muted)">${esc(doc.reason)}</small></span>
+      <span>${doc.filePath
+        ? `<a class="ghost" href="${esc(doc.filePath)}" target="_blank" style="text-decoration:none;padding:7px 10px;border-radius:8px">Open</a>`
+        : (doc.satisfied ? '<span class="tag">Generated</span>' : '<span class="tag">Waiting</span>')}</span>
+    </div>`).join('')}
+    ${bundle.complete ? '' : `<small style="color:var(--muted)">Applicant deadline: ${new Date(bundle.dueAt).toLocaleString()}</small>`}
+  </div>`;
 }
 
 $('docCv').addEventListener('click', () => { openDocument = 'cv'; showOpenDocument(); });
