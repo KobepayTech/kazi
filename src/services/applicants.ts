@@ -3,6 +3,8 @@ import { generateCv, renderCvText } from '../domain/cv.ts';
 import { newId } from '../domain/ids.ts';
 import type {
   Applicant,
+  ApplicantDocument,
+  ApplicantDocumentKind,
   ApplicantPreferences,
   Cv,
   CvCertificate,
@@ -127,6 +129,34 @@ export class ApplicantService {
     const existing = this.store.getCvByApplicant(applicantId);
     const certificates = [...(existing?.certificates ?? []), certificate];
     return this.regenerateCv(applicant, this.store.getPreferences(applicantId), certificates);
+  }
+
+  documents(applicantId: string): ApplicantDocument[] {
+    this.requireApplicant(applicantId);
+    return this.store.listApplicantDocuments(applicantId);
+  }
+
+  addDocument(
+    applicantId: string,
+    input: {
+      kind: ApplicantDocumentKind;
+      label: string;
+      filePath: string;
+      filename: string;
+      contentType: string;
+    },
+  ): ApplicantDocument {
+    this.requireApplicant(applicantId);
+    return this.store.addApplicantDocument({
+      applicantId,
+      ...input,
+      replaceKind: input.kind === 'cv',
+    });
+  }
+
+  removeDocument(applicantId: string, documentId: string): boolean {
+    this.requireApplicant(applicantId);
+    return this.store.deleteApplicantDocument(applicantId, documentId);
   }
 
   cv(applicantId: string): Cv {
