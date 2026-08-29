@@ -148,7 +148,23 @@
         <label for="rSkills">Skills</label><input id="rSkills" placeholder="Housekeeping, Guest relations">
         <label for="rLanguages">Languages</label><input id="rLanguages" placeholder="English, Swahili">
         <label><input type="checkbox" id="rRelocate" style="width:auto"> I can relocate for work</label>
-        <button class="primary" id="registerBtn">Create my account and CV</button>
+
+        <label for="rPhoto">Profile photo</label>
+        <input id="rPhoto" type="file" accept="image/jpeg,image/png,image/webp">
+        <small style="display:block;color:var(--muted);margin-top:4px">Required. This photo is sent with your applications.</small>
+
+        <label for="rCvMode">CV</label>
+        <select id="rCvMode">
+          <option value="create">Create my CV with Kazi</option>
+          <option value="upload">Upload my existing CV</option>
+        </select>
+        <div id="rCvUploadBox" hidden>
+          <label for="rCvFile">Upload CV (PDF)</label>
+          <input id="rCvFile" type="file" accept="application/pdf">
+        </div>
+        <small style="display:block;color:var(--muted);margin-top:4px">You can replace your CV later from Profile.</small>
+
+        <button class="primary" id="registerBtn">Create my account</button>
       </div>
     </section>
 
@@ -164,7 +180,10 @@
     </section>
 
     <!-- applications --------------------------------------------------- -->
-    <section id="applications" hidden><div class="panel" id="applicationList"></div></section>
+    <section id="applications" hidden>
+      <div id="documentReminder"></div>
+      <div class="panel" id="applicationList"></div>
+    </section>
 
     <!-- profile -------------------------------------------------------- -->
     <section id="profile" hidden>
@@ -181,6 +200,24 @@
           <option value="true">Only jobs requiring certificates</option>
         </select>
         <button class="primary" id="saveFilters">Save filters</button>
+      </div>
+      <div class="panel" id="documentBox">
+        <strong>Photo & documents</strong>
+        <p style="font-size:13px;color:var(--muted);margin:6px 0 10px">Kazi reuses these automatically when a job asks for them.</p>
+        <div id="documentList"></div>
+        <label for="docKind">Add a document</label>
+        <select id="docKind">
+          <option value="cv">CV</option>
+          <option value="certificate">Certificate / qualification</option>
+          <option value="licence">Licence</option>
+          <option value="identity">ID / passport</option>
+          <option value="other">Other</option>
+        </select>
+        <label for="docFile">File</label>
+        <input id="docFile" type="file" accept=".pdf,image/jpeg,image/png,image/webp">
+        <label for="docLabel">Label (optional)</label>
+        <input id="docLabel" placeholder="Driving licence, degree certificate">
+        <button class="primary" id="uploadDocument">Save document</button>
       </div>
       <div class="panel" id="cvBox"></div>
     </section>
@@ -216,6 +253,12 @@
 const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 const list = (v) => v.split(',').map((s) => s.trim()).filter(Boolean);
+const fileBase64 = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result || ''));
+  reader.onerror = () => reject(new Error('Could not read that file.'));
+  reader.readAsDataURL(file);
+});
 
 let token = localStorage.getItem('kobeos_token') || '';
 let applicantId = localStorage.getItem('kobeos_applicant') || '';
