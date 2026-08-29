@@ -198,7 +198,7 @@ export class SwipeService {
           jobId: job.id,
           title: job.title,
           employerName: this.employerName(job.employerId),
-          message: 'Your CV, photo and any required documents already on file will be shared. Missing documents can be submitted within 24 hours.',
+          message: 'Your CV will be shared with this employer. Your photo and any required documents already on file will also be sent; missing documents can be submitted within 24 hours.',
         },
       };
     }
