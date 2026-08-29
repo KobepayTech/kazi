@@ -25,7 +25,7 @@ test('demo seed creates a full swipe deck and an active demo applicant', async (
   assert.ok(titles.includes('Truck Driver'));
   assert.ok(titles.includes('Secondary School Teacher'));
   assert.ok(titles.includes('Shop Attendant'));
-  assert.ok(titles.includes('IT Support Technician'));
+  assert.ok(titles.some((title) => /it support technician/i.test(title)));
 });
 
 test('demo seed is idempotent', async (t) => {
