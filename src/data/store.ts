@@ -5,6 +5,8 @@ import { withMonthlyTzs } from '../domain/salary.ts';
 import type {
   Actor,
   Applicant,
+  ApplicantDocument,
+  ApplicantDocumentKind,
   ApplicantPreferences,
   Application,
   ApplicationStatus,
@@ -164,6 +166,20 @@ function mapApplicant(row: Row): Applicant {
     languages: fromJsonArray<string>(row.languages_json),
     photoPath: textOrNull(row.photo_path),
     willingToRelocate: toBool(row.willing_to_relocate),
+    createdAt: String(row.created_at),
+  };
+}
+
+function mapApplicantDocument(row: Row): ApplicantDocument {
+  return {
+    id: String(row.id),
+    tenantId: String(row.tenant_id),
+    applicantId: String(row.applicant_id),
+    kind: String(row.kind) as ApplicantDocumentKind,
+    label: String(row.label),
+    filePath: String(row.file_path),
+    filename: String(row.filename),
+    contentType: String(row.content_type),
     createdAt: String(row.created_at),
   };
 }
@@ -597,6 +613,74 @@ export class TenantStore {
       | Row
       | undefined;
     return row ? mapCv(row) : null;
+  }
+
+  // ------------------------------------------------------ applicant documents
+
+  addApplicantDocument(input: {
+    applicantId: string;
+    kind: ApplicantDocumentKind;
+    label: string;
+    filePath: string;
+    filename: string;
+    contentType: string;
+    replaceKind?: boolean;
+  }): ApplicantDocument {
+    if (input.replaceKind) {
+      this.db
+        .prepare('DELETE FROM applicant_documents WHERE tenant_id = ? AND applicant_id = ? AND kind = ?')
+        .run(this.tenantId, input.applicantId, input.kind);
+    }
+    const id = newId('doc');
+    this.db
+      .prepare(
+        `INSERT INTO applicant_documents
+           (id, tenant_id, applicant_id, kind, label, file_path, filename, content_type, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        this.tenantId,
+        input.applicantId,
+        input.kind,
+        input.label,
+        input.filePath,
+        input.filename,
+        input.contentType,
+        nowIso(),
+      );
+    const saved = this.getApplicantDocument(id);
+    if (saved === null) throw new Error('applicant document insert failed');
+    return saved;
+  }
+
+  getApplicantDocument(id: string): ApplicantDocument | null {
+    const row = this.db
+      .prepare('SELECT * FROM applicant_documents WHERE tenant_id = ? AND id = ?')
+      .get(this.tenantId, id) as Row | undefined;
+    return row ? mapApplicantDocument(row) : null;
+  }
+
+  listApplicantDocuments(applicantId: string, kind?: ApplicantDocumentKind): ApplicantDocument[] {
+    const rows = kind === undefined
+      ? (this.db
+          .prepare(
+            'SELECT * FROM applicant_documents WHERE tenant_id = ? AND applicant_id = ? ORDER BY created_at DESC',
+          )
+          .all(this.tenantId, applicantId) as Row[])
+      : (this.db
+          .prepare(
+            'SELECT * FROM applicant_documents WHERE tenant_id = ? AND applicant_id = ? AND kind = ? ORDER BY created_at DESC',
+          )
+          .all(this.tenantId, applicantId, kind) as Row[]);
+    return rows.map(mapApplicantDocument);
+  }
+
+  deleteApplicantDocument(applicantId: string, documentId: string): boolean {
+    const result = this.db
+      .prepare('DELETE FROM applicant_documents WHERE tenant_id = ? AND applicant_id = ? AND id = ?')
+      .run(this.tenantId, applicantId, documentId);
+    return Number(result.changes) > 0;
   }
 
   // ------------------------------------------------- memberships & payments
