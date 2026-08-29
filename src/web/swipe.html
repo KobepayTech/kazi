@@ -643,20 +643,48 @@ async function loadMembership() {
 
 async function loadApplications() {
   const data = await api(`/api/applicants/${applicantId}/applications`);
+  notifyMissingDocuments(data.applications);
+
   $('applicationList').innerHTML = data.applications.length === 0
     ? '<p style="color:#5b6f66;margin:0">You have not applied for anything yet.</p>'
-    : data.applications.map((entry) => `
-        <div class="row"><span><strong>${esc(entry.jobTitle)}</strong><br>
+    : data.applications.map((entry) => {
+        const bundle = entry.documents;
+        const missing = bundle.documents.filter((doc) => !doc.satisfied);
+        const docs = `<div style="margin-top:10px;padding:10px;border:1px solid var(--line);border-radius:10px">
+          <div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
+            <strong style="font-size:13px">Documents ${bundle.satisfiedCount}/${bundle.requiredCount}</strong>
+            <span class="tag" data-doc-due="${esc(bundle.dueAt)}">${bundle.complete ? 'Complete' : countdownText(bundle.dueAt)}</span>
+          </div>
+          <div style="margin-top:6px;font-size:13px">
+            ${bundle.documents.map((doc) => `<div style="display:flex;justify-content:space-between;gap:10px;padding:4px 0">
+              <span>${doc.satisfied ? '✓' : '⚠'} ${esc(doc.label)}</span>
+              ${doc.satisfied
+                ? (doc.filePath ? `<a class="link" href="${esc(doc.filePath)}" target="_blank">View</a>` : '<small>Ready</small>')
+                : `<button class="link" data-upload-missing="${esc(doc.kind)}">Add now</button>`}
+            </div>`).join('')}
+          </div>
+          ${missing.length ? `<small style="display:block;color:var(--muted);margin-top:6px">Submit missing items by ${new Date(bundle.dueAt).toLocaleString()}.</small>` : ''}
+        </div>`;
+
+        return `<div class="row"><span style="min-width:0;flex:1"><strong>${esc(entry.jobTitle)}</strong><br>
           <small style="color:#5b6f66">${esc(entry.employerName)} · ${esc(entry.reference)}<br>
           Applied ${new Date(entry.appliedAt).toLocaleDateString()}</small>
           <div class="steps">${[0,1,2,3].map((step) => `<span class="${entry.step >= step ? 'on' : ''}"></span>`).join('')}</div>
           <small style="color:#5b6f66">${esc(entry.statusMessage)}</small><br>
           <button class="link" data-package="${esc(entry.applicationId)}" style="margin-top:6px">CV · letter · interview prep</button>
-        </span><span class="tag">${esc(entry.statusLabel)}</span></div>`).join('');
+          ${docs}
+        </span><span class="tag">${esc(entry.statusLabel)}</span></div>`;
+      }).join('');
 
   $('applicationList').querySelectorAll('[data-package]').forEach((button) => {
     button.addEventListener('click', () => void openApplicationPackage(button.dataset.package));
   });
+  $('applicationList').querySelectorAll('[data-upload-missing]').forEach((button) => {
+    button.addEventListener('click', () => void uploadMissingDocument(button.dataset.uploadMissing));
+  });
+
+  updateDocumentCountdowns();
+  if (reminderTimer === null) reminderTimer = setInterval(updateDocumentCountdowns, 30_000);
 }
 
 // ---------------------------------------------------------------- profile
