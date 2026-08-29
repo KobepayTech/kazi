@@ -3,6 +3,10 @@ main = "src/cloudflare/worker.ts"
 compatibility_date = "2026-08-22"
 workers_dev = true
 
+[[routes]]
+pattern = "kazi.kobeapptz.com"
+custom_domain = true
+
 [assets]
 directory = "./src/web"
 binding = "ASSETS"
