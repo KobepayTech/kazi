@@ -3,6 +3,7 @@ import { STATUS_LABELS, STATUS_MESSAGES, flowPosition } from '../domain/applicat
 import { buildApplicationPackage } from '../domain/application-package.ts';
 import type { ApplicationPackage } from '../domain/application-package.ts';
 import { buildJobCard } from '../domain/cards.ts';
+import { applicationDocumentBundle, type ApplicationDocumentBundle } from '../domain/documents.ts';
 import { byNewest, eligibilityFailures, filterReasons } from '../domain/feed.ts';
 import { evaluateJobFit, fitVerdictLabel } from '../domain/matching.ts';
 import type { JobFit } from '../domain/matching.ts';
@@ -40,7 +41,13 @@ export type ApplicationConfirmation = {
 
 export type SwipeOutcome =
   | { result: 'confirm_required'; prompt: ApplyPrompt }
-  | { result: 'applied'; application: Application; confirmation: ApplicationConfirmation; applicationPackage: ApplicationPackage }
+  | {
+      result: 'applied';
+      application: Application;
+      confirmation: ApplicationConfirmation;
+      applicationPackage: ApplicationPackage;
+      documents: ApplicationDocumentBundle;
+    }
   | { result: 'skipped'; jobId: string }
   | { result: 'saved'; jobId: string }
   | { result: 'blocked'; code: string; message: string; upgradeTo?: MembershipPlan | null; reference?: string };
@@ -57,6 +64,7 @@ export type TrackedApplication = {
   step: number;
   appliedAt: string;
   updatedAt: string;
+  documents: ApplicationDocumentBundle;
 };
 
 export type JobDetail = {
@@ -190,7 +198,7 @@ export class SwipeService {
           jobId: job.id,
           title: job.title,
           employerName: this.employerName(job.employerId),
-          message: 'Your CV will be shared with this employer.',
+          message: 'Your CV, photo and any required documents already on file will be shared. Missing documents can be submitted within 24 hours.',
         },
       };
     }
@@ -265,11 +273,19 @@ export class SwipeService {
       employerName,
       preferences: this.store.getPreferences(applicant.id),
     });
+    const documents = applicationDocumentBundle({
+      application,
+      job,
+      applicant,
+      cv,
+      documents: this.store.listApplicantDocuments(applicant.id),
+    });
 
     return {
       result: 'applied',
       application,
       applicationPackage,
+      documents,
       confirmation: {
         message: 'Application submitted successfully',
         position: job.title,
