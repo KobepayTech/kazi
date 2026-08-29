@@ -832,7 +832,7 @@ async function start() {
   $('tenantLine').textContent = `Jobs through ${plans.tenant}`;
   renderProfile();
   showTab('deck');
-  await Promise.all([loadMembership(), loadFeed(), loadApplications()]);
+  await Promise.all([loadMembership(), loadFeed(), loadApplications(), loadDocuments()]);
   listen();
 }
 
@@ -844,6 +844,10 @@ function saveSession(session, id) {
 }
 
 $('showRegister').addEventListener('click', () => { $('registerPanel').hidden = !$('registerPanel').hidden; });
+
+$('rCvMode').addEventListener('change', () => {
+  $('rCvUploadBox').hidden = $('rCvMode').value !== 'upload';
+});
 
 $('loginBtn').addEventListener('click', async () => {
   try {
@@ -857,7 +861,22 @@ $('loginBtn').addEventListener('click', async () => {
 });
 
 $('registerBtn').addEventListener('click', async () => {
+  const photo = $('rPhoto').files?.[0];
+  const cvMode = $('rCvMode').value;
+  const cvFile = $('rCvFile').files?.[0];
+
+  if (!photo) {
+    notice('warn', 'Add a profile photo before creating your account.', true);
+    return;
+  }
+  if (cvMode === 'upload' && !cvFile) {
+    notice('warn', 'Choose your CV PDF, or select “Create my CV with Kazi”.', true);
+    return;
+  }
+
   try {
+    $('registerBtn').disabled = true;
+    $('registerBtn').textContent = 'Creating account…';
     const result = await fetch('/api/applicants/register', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -875,10 +894,21 @@ $('registerBtn').addEventListener('click', async () => {
         willingToRelocate: $('rRelocate').checked,
       }),
     }).then(async (r) => { const d = await r.json(); if (!r.ok) throw new Error(d?.error?.message); return d; });
+
     saveSession(result.session, result.applicant.id);
+    await uploadProfilePhoto(photo);
+    if (cvMode === 'upload') await uploadVaultDocument('cv', cvFile, 'Uploaded CV');
+
     await start();
-    notice('ok', 'Account created. KobeOS has written your CV.');
-  } catch (error) { notice('err', esc(error.message || 'Could not register.')); }
+    notice('ok', cvMode === 'upload'
+      ? 'Account created. Your photo and CV are ready for applications.'
+      : 'Account created. Your photo is saved and Kazi created your CV.');
+  } catch (error) {
+    notice('err', esc(error.message || 'Could not register.'));
+  } finally {
+    $('registerBtn').disabled = false;
+    $('registerBtn').textContent = 'Create my account';
+  }
 });
 
 $('signOut').addEventListener('click', () => {
