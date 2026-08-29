@@ -73,6 +73,28 @@ jobs:
           PUBLIC_URL="${EXPLICIT_PUBLIC_URL:-$PUBLIC_KAZI_URL}"
           printf '%s' "$PUBLIC_URL" | npx --yes wrangler@4 secret put KOBEOS_PUBLIC_URL
 
+      - name: Seed hosted demo data
+        if: github.event_name != 'pull_request'
+        shell: bash
+        env:
+          EXPLICIT_AGENCY_KEY: ${{ secrets.KOBEOS_TENANT_KEY }}
+          PUBLIC_KAZI_URL: https://kazi.kobeapptz.com
+        run: |
+          set -euo pipefail
+          if [ -n "$EXPLICIT_AGENCY_KEY" ]; then
+            AGENCY_KEY="$EXPLICIT_AGENCY_KEY"
+          else
+            AGENCY_KEY="$(printf '%s' "${CLOUDFLARE_API_TOKEN}:${CLOUDFLARE_ACCOUNT_ID}:kazi-agency-v1" | sha256sum | awk '{print $1}')"
+          fi
+          echo "::add-mask::$AGENCY_KEY"
+          curl --fail --silent --show-error --retry 12 --retry-delay 5 \
+            -X POST \
+            -H "x-agency-key: $AGENCY_KEY" \
+            -H "content-type: application/json" \
+            --data '{"staffId":"deployment-demo-seed"}' \
+            "$PUBLIC_KAZI_URL/api/agency/demo/seed"
+          echo
+
       - name: Smoke test deployment
         if: github.event_name != 'pull_request'
         shell: bash
