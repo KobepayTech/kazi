@@ -691,14 +691,17 @@ async function loadApplications() {
 
 function renderProfile() {
   const { applicant, preferences, cv } = profileData;
-  $('profileBox').innerHTML = `<strong>${esc(applicant.fullName)}</strong>
+  $('profileBox').innerHTML = `<div style="display:flex;gap:12px;align-items:center">
+      ${applicant.photoPath
+        ? `<img src="${esc(applicant.photoPath)}" alt="Profile photo" style="width:64px;height:64px;object-fit:cover;border-radius:50%;border:1px solid var(--line)">`
+        : '<div style="width:64px;height:64px;border-radius:50%;background:#e7f0ea;display:grid;place-items:center">No photo</div>'}
+      <div><strong>${esc(applicant.fullName)}</strong><br><small style="color:var(--muted)">${esc(applicant.location)}</small></div>
+    </div>
     <div class="row"><span>Phone</span><span>${esc(applicant.phone)}</span></div>
-    <div class="row"><span>Location</span><span>${esc(applicant.location)}</span></div>
     <div class="row"><span>Experience</span><span>${applicant.experienceYears} year(s)</span></div>
     <div class="row"><span>Education</span><span>${esc(applicant.educationLevel)}</span></div>`;
-  $('cvBox').innerHTML = `<strong>Your CV</strong>
-    <p style="font-size:13px;color:#5b6f66;margin:6px 0 10px">Written for you from your profile and sent
-      automatically when you apply.</p>
+  $('cvBox').innerHTML = `<strong>Kazi-created CV</strong>
+    <p style="font-size:13px;color:#5b6f66;margin:6px 0 10px">Kazi keeps this structured CV available for matching and tailored applications. If you upload your own CV, employers receive that file too.</p>
     <pre style="white-space:pre-wrap;font:13px/1.5 ui-monospace,monospace;margin:0">${esc(cvText)}</pre>`;
   $('fCategories').value = preferences.categories.join(', ');
   $('fLocations').value = preferences.locations.join(', ');
@@ -707,7 +710,62 @@ function renderProfile() {
   void cv;
 }
 
+function renderDocumentVault() {
+  if (!documentState) return;
+  const docs = documentState.documents || [];
+  const cvDoc = docs.find((doc) => doc.kind === 'cv');
+  const otherDocs = docs.filter((doc) => doc.kind !== 'cv');
+
+  $('documentList').innerHTML = `
+    <div class="row"><span>Profile photo</span><span>
+      ${documentState.photoPath ? '<span class="tag">Ready</span>' : '<span class="tag">Missing</span>'}
+      <button class="link" id="replacePhoto" style="margin-left:6px">${documentState.photoPath ? 'Replace' : 'Add'}</button>
+    </span></div>
+    <div class="row"><span>CV</span><span>
+      <span class="tag">${cvDoc ? 'Uploaded' : 'Kazi-created'}</span>
+      ${cvDoc ? `<a class="link" href="${esc(cvDoc.filePath)}" target="_blank" style="margin-left:6px">View</a>
+        <button class="link" data-delete-doc="${esc(cvDoc.id)}" style="margin-left:6px">Use Kazi CV</button>` : ''}
+    </span></div>
+    ${otherDocs.map((doc) => `<div class="row"><span>${esc(doc.label)}<br><small style="color:var(--muted)">${esc(doc.kind)}</small></span>
+      <span><a class="link" href="${esc(doc.filePath)}" target="_blank">View</a>
+      <button class="link" data-delete-doc="${esc(doc.id)}" style="margin-left:6px">Remove</button></span></div>`).join('')}
+  `;
+
+  $('replacePhoto')?.addEventListener('click', () => void uploadMissingDocument('photo'));
+  $('documentList').querySelectorAll('[data-delete-doc]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      try {
+        await api(`/api/applicants/${applicantId}/documents/${encodeURIComponent(button.dataset.deleteDoc)}`, { method: 'DELETE' });
+        await Promise.all([loadDocuments(), loadApplications()]);
+        notice('ok', 'Document removed.');
+      } catch (error) { notice('err', esc(error.message)); }
+    });
+  });
+}
+
+async function loadDocuments() {
+  documentState = await api(`/api/applicants/${applicantId}/documents`);
+  renderDocumentVault();
+  return documentState;
+}
+
 let cvText = '';
+
+$('uploadDocument').addEventListener('click', async () => {
+  const file = $('docFile').files?.[0];
+  const kind = $('docKind').value;
+  try {
+    await uploadVaultDocument(kind, file, $('docLabel').value.trim());
+    $('docFile').value = '';
+    $('docLabel').value = '';
+    await Promise.all([loadDocuments(), loadApplications()]);
+    notice('ok', 'Document saved. Kazi will attach it automatically when needed.');
+  } catch (error) { notice('err', esc(error.message)); }
+});
+
+$('docKind').addEventListener('change', () => {
+  $('docFile').accept = $('docKind').value === 'cv' ? 'application/pdf' : '.pdf,image/jpeg,image/png,image/webp';
+});
 
 $('saveFilters').addEventListener('click', async () => {
   try {
