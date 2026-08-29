@@ -47,17 +47,10 @@ jobs:
 
       - name: Deploy Worker
         if: github.event_name != 'pull_request'
-        id: deploy
         shell: bash
         run: |
           set -euo pipefail
-          npx --yes wrangler@4 deploy 2>&1 | tee /tmp/kazi-deploy.log
-          WORKERS_URL="$(grep -Eo 'https://[A-Za-z0-9._-]+\.workers\.dev' /tmp/kazi-deploy.log | tail -n 1 || true)"
-          if [ -z "$WORKERS_URL" ]; then
-            echo 'Could not determine the workers.dev URL from Wrangler output.'
-            exit 1
-          fi
-          echo "workers_url=$WORKERS_URL" >> "$GITHUB_OUTPUT"
+          npx --yes wrangler@4 deploy
 
       - name: Configure hosted Kazi secrets
         if: github.event_name != 'pull_request'
@@ -65,7 +58,7 @@ jobs:
         env:
           EXPLICIT_AGENCY_KEY: ${{ secrets.KOBEOS_TENANT_KEY }}
           EXPLICIT_PUBLIC_URL: ${{ vars.KOBEOS_PUBLIC_URL }}
-          WORKERS_URL: ${{ steps.deploy.outputs.workers_url }}
+          PUBLIC_KAZI_URL: https://kazi.kobeapptz.com
         run: |
           set -euo pipefail
 
@@ -77,15 +70,15 @@ jobs:
           echo "::add-mask::$AGENCY_KEY"
           printf '%s' "$AGENCY_KEY" | npx --yes wrangler@4 secret put KOBEOS_TENANT_KEY
 
-          PUBLIC_URL="${EXPLICIT_PUBLIC_URL:-$WORKERS_URL}"
+          PUBLIC_URL="${EXPLICIT_PUBLIC_URL:-$PUBLIC_KAZI_URL}"
           printf '%s' "$PUBLIC_URL" | npx --yes wrangler@4 secret put KOBEOS_PUBLIC_URL
 
       - name: Smoke test deployment
         if: github.event_name != 'pull_request'
         shell: bash
         env:
-          WORKERS_URL: ${{ steps.deploy.outputs.workers_url }}
+          PUBLIC_KAZI_URL: https://kazi.kobeapptz.com
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error --retry 6 --retry-delay 5 "$WORKERS_URL/health"
+          curl --fail --silent --show-error --retry 12 --retry-delay 5 "$PUBLIC_KAZI_URL/health"
           echo
