@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { Platform, TenantContext } from '../app.ts';
 import type { RealtimeScope } from '../data/store.ts';
+import { ensureDemoData } from '../demo.ts';
 import { STATUS_LABELS } from '../domain/applications.ts';
 import { APPLICATION_STATUSES, JOB_CATEGORIES } from '../domain/types.ts';
 import type {
@@ -491,6 +492,11 @@ export function createRouter(platform: Platform): Router {
   });
 
   // ----------------------------------------------------------------- agency
+
+  router.post('/api/agency/demo/seed', async (ctx) => {
+    const { context, actor } = requireAgency(ctx);
+    return ensureDemoData(context, actor.id);
+  });
 
   router.post('/api/agency/uploads/image', (ctx) => {
     requireAgency(ctx);
