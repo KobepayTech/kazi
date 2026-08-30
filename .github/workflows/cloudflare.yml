@@ -111,5 +111,14 @@ jobs:
             grep -q '<title>KobeOS - swipe-to-apply recruitment</title>' "/tmp/kazi-home-$index.html"
             curl --fail --silent --show-error --retry 12 --retry-delay 5 "$URL/jobs" -o "/tmp/kazi-jobs-$index.html"
             grep -q '<title>Jobs</title>' "/tmp/kazi-jobs-$index.html"
+
+            curl --fail --silent --show-error --retry 12 --retry-delay 5               "$URL/api/e/DEMO01" -o "/tmp/kazi-demo-employer-$index.json"
+            grep -q '"name":"Kibo Call Centre (Demo)"' "/tmp/kazi-demo-employer-$index.json"
+
+            curl --fail --silent --show-error --retry 12 --retry-delay 5               -X POST               -H 'content-type: application/json'               --data '{"kind":"access_code","secret":"123456"}'               "$URL/api/e/DEMO01/login" -o "/tmp/kazi-demo-login-$index.json"
+
+            DEMO_TOKEN="$(node -e "const fs=require('fs');const d=JSON.parse(fs.readFileSync('/tmp/kazi-demo-login-$index.json','utf8'));if(!d.token)process.exit(1);process.stdout.write(d.token)")"
+            curl --fail --silent --show-error --retry 12 --retry-delay 5               -H "authorization: Bearer $DEMO_TOKEN"               "$URL/api/employer/dashboard" -o "/tmp/kazi-demo-dashboard-$index.json"
+            grep -q '"jobs":' "/tmp/kazi-demo-dashboard-$index.json"
           done
           echo
