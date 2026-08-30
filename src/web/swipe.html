@@ -269,6 +269,7 @@ let openPackage = null;
 let packageView = 'cv';
 let documentState = null;
 let reminderTimer = null;
+let subscriptionActive = false;
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -535,9 +536,9 @@ $('applyConfirm').addEventListener('click', async () => {
   if (jobId) await swipe(jobId, 'right', true);
 });
 
-$('btnSkip').addEventListener('click', () => cards[0] && swipe(cards[0].jobId, 'left'));
-$('btnSave').addEventListener('click', () => cards[0] && swipe(cards[0].jobId, 'up'));
-$('btnApply').addEventListener('click', () => cards[0] && askToApply(cards[0]));
+$('btnSkip').addEventListener('click', () => subscriptionActive && cards[0] && swipe(cards[0].jobId, 'left'));
+$('btnSave').addEventListener('click', () => subscriptionActive && cards[0] && swipe(cards[0].jobId, 'up'));
+$('btnApply').addEventListener('click', () => subscriptionActive && cards[0] && askToApply(cards[0]));
 
 async function openDetail(jobId) {
   try {
@@ -599,44 +600,86 @@ $('packageClose').addEventListener('click', () => $('packageDialog').close());
 
 // ------------------------------------------------------------ memberships
 
+async function submitPlanPayment(plan) {
+  const reference = prompt(
+    `Subscribe to ${plan.name} for TSh ${plan.priceTzs.toLocaleString()}.\n\nAfter paying by the agency's mobile-money channel, enter the transaction reference:`,
+  );
+  if (!reference) return;
+  await api(`/api/applicants/${applicantId}/payments`, {
+    method: 'POST',
+    body: JSON.stringify({
+      planCode: plan.code,
+      amountTzs: plan.priceTzs,
+      reference,
+      method: 'mobile_money',
+    }),
+  });
+}
+
+function lockJobDeck(message) {
+  cards = [];
+  $('deckActions').hidden = true;
+  $('deckArea').innerHTML = `<div class="empty" style="height:220px"><div>
+    <div style="font-size:36px;margin-bottom:8px">🔒</div>
+    <strong>Jobs are locked</strong>
+    <p style="margin:8px 0 0;color:var(--muted)">${esc(message)}</p>
+  </div></div>`;
+}
+
 async function loadMembership() {
   const [view, plans] = await Promise.all([
     api(`/api/applicants/${applicantId}/membership`),
     fetch('/api/plans').then((r) => r.json()),
   ]);
   const box = $('membershipBox');
+  subscriptionActive = Boolean(view.active);
+
   if (view.active) {
-    box.innerHTML = `<div class="notice ok"><strong>${esc(view.plan?.name ?? 'Membership')}</strong> ·
-      ${view.daysRemaining} days left</div>`;
-    return;
+    box.innerHTML = `<div class="notice ok"><strong>Subscription active · ${esc(view.plan?.name ?? 'Kazi')}</strong><br>
+      ${view.daysRemaining} days remaining. You can browse and apply for jobs covered by this package.</div>`;
+    return view;
   }
+
   if (view.pendingPayment) {
-    box.innerHTML = `<div class="notice warn">Payment <strong>${esc(view.pendingPayment.reference)}</strong>
-      is waiting for the agency to confirm. You can browse while you wait.</div>`;
-    return;
+    box.innerHTML = `<div class="panel" style="border:2px solid #f0d9a8">
+      <strong>Subscription payment awaiting confirmation</strong>
+      <p style="color:var(--muted);margin:7px 0 0">Reference <strong>${esc(view.pendingPayment.reference)}</strong> has been submitted.
+      Jobs stay locked until Soko Huru confirms the payment.</p>
+    </div>`;
+    lockJobDeck('Your subscription payment is waiting for confirmation.');
+    return view;
   }
-  box.innerHTML = `<div class="panel"><strong>Choose a membership to apply</strong>
+
+  box.innerHTML = `<div class="panel" style="border:2px solid var(--green)">
+    <div style="font-size:13px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.04em">Subscription required</div>
+    <h2 style="margin:6px 0 4px;font-size:22px">Subscribe to unlock Kazi jobs</h2>
+    <p style="font-size:14px;color:var(--muted);margin:0 0 12px">Choose a package before you can view the swipe deck or apply.</p>
     ${plans.plans.map((plan) => `<div class="plan">
-        <span><b>${esc(plan.name)}</b><small>TSh ${plan.priceTzs.toLocaleString()} · ${plan.durationDays} days</small></span>
-        <button class="link" data-plan="${esc(plan.code)}">Pay</button></div>`).join('')}
-    <p style="font-size:13px;color:#5b6f66;margin:12px 0 0">Pay by mobile money, then enter the transaction
-      reference. The agency confirms it and your membership starts.</p></div>`;
+        <span><b>${esc(plan.name)}</b>
+          <small>TSh ${plan.priceTzs.toLocaleString()} · ${plan.durationDays} days ·
+          ${plan.coversCertificateJobs ? 'all jobs' : 'non-certificate jobs'}</small></span>
+        <button class="primary" data-plan="${esc(plan.code)}">Subscribe</button>
+      </div>`).join('')}
+    <p style="font-size:12px;color:var(--muted);margin:12px 0 0">After payment, enter the transaction reference. Jobs unlock when the agency confirms it.</p>
+  </div>`;
+
+  lockJobDeck('Choose and activate a subscription above to unlock the job deck.');
 
   box.querySelectorAll('button[data-plan]').forEach((button) => {
     button.addEventListener('click', async () => {
       const plan = plans.plans.find((entry) => entry.code === button.dataset.plan);
-      const reference = prompt(`Pay TSh ${plan.priceTzs.toLocaleString()} for ${plan.name}, then enter the transaction reference:`);
-      if (!reference) return;
+      if (!plan) return;
       try {
-        await api(`/api/applicants/${applicantId}/payments`, {
-          method: 'POST',
-          body: JSON.stringify({ planCode: plan.code, amountTzs: plan.priceTzs, reference }),
-        });
-        notice('ok', 'Payment submitted. The agency will confirm it shortly.');
+        await submitPlanPayment(plan);
+        notice('ok', 'Payment submitted. Your subscription will unlock after confirmation.');
         await loadMembership();
-      } catch (error) { notice('err', esc(error.message)); }
+      } catch (error) {
+        notice('err', esc(error.message));
+      }
     });
   });
+
+  return view;
 }
 
 // ----------------------------------------------------------- applications
@@ -779,7 +822,7 @@ $('saveFilters').addEventListener('click', async () => {
       }),
     });
     notice('ok', 'Filters saved.');
-    await loadFeed();
+    if (subscriptionActive) await loadFeed();
   } catch (error) { notice('err', esc(error.message)); }
 });
 
@@ -787,6 +830,17 @@ $('saveFilters').addEventListener('click', async () => {
 
 async function loadFeed() {
   const data = await api(`/api/applicants/${applicantId}/feed`);
+  if (data.paywall?.required) {
+    subscriptionActive = false;
+    cards = [];
+    lockJobDeck(
+      data.paywall.membership?.pendingPayment
+        ? 'Your subscription payment is waiting for confirmation.'
+        : 'An active subscription is required to view jobs.',
+    );
+    return;
+  }
+  subscriptionActive = true;
   cards = data.cards;
   renderDeck();
 }
@@ -809,8 +863,11 @@ function listen() {
     void loadApplications();
   });
   source.addEventListener('membership_activated', () => {
-    notice('ok', 'Your membership is active. You can apply now.');
-    void loadMembership();
+    notice('ok', 'Your subscription is active. Jobs are now unlocked.');
+    void (async () => {
+      await loadMembership();
+      await loadFeed();
+    })();
   });
   source.addEventListener('payment_rejected', (event) => {
     notice('err', `Payment ${esc(JSON.parse(event.data).reference)} was not accepted.`, true);
@@ -832,7 +889,9 @@ async function start() {
   $('tenantLine').textContent = `Jobs through ${plans.tenant}`;
   renderProfile();
   showTab('deck');
-  await Promise.all([loadMembership(), loadFeed(), loadApplications(), loadDocuments()]);
+  const membership = await loadMembership();
+  await Promise.all([loadApplications(), loadDocuments()]);
+  if (membership.active) await loadFeed();
   listen();
 }
 
