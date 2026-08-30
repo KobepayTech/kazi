@@ -324,8 +324,22 @@ export function createRouter(platform: Platform): Router {
 
   router.get('/api/applicants/:id/feed', (ctx) => {
     const { context, applicantId } = requireApplicant(ctx);
+    const membership = context.memberships.view(applicantId);
+    if (!membership.active) {
+      return {
+        cards: [],
+        paywall: {
+          required: true,
+          membership,
+          plans: context.memberships.plans(),
+        },
+      };
+    }
     const limit = Number(ctx.query.get('limit') ?? 20);
-    return { cards: context.swipe.feed(applicantId, Number.isFinite(limit) ? limit : 20) };
+    return {
+      cards: context.swipe.feed(applicantId, Number.isFinite(limit) ? limit : 20),
+      paywall: null,
+    };
   });
 
   router.get('/api/applicants/:id/jobs/:jobId', (ctx) => {
@@ -628,6 +642,11 @@ export function createRouter(platform: Platform): Router {
   router.get('/api/agency/applicants', (ctx) => {
     const { context } = requireAgency(ctx);
     return { applicants: context.agency.applicants() };
+  });
+
+  router.get('/api/agency/subscribers', (ctx) => {
+    const { context } = requireAgency(ctx);
+    return context.agency.subscribers();
   });
 
   router.get('/api/agency/payments', (ctx) => {
