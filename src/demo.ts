@@ -1,6 +1,10 @@
 import type { TenantContext } from './app.ts';
+import { hashSecret } from './services/access.ts';
 
 export const DEMO_APPLICANT_PHONE = '+255700000999';
+export const DEMO_EMPLOYER_NAME = 'Kibo Call Centre (Demo)';
+export const DEMO_EMPLOYER_PAGE_CODE = 'DEMO01';
+export const DEMO_EMPLOYER_ACCESS_CODE = '123456';
 
 type DemoPoster = {
   employerName: string;
@@ -168,6 +172,8 @@ export type DemoSeedResult = {
   membershipActivated: boolean;
   applicantPhone: string;
   feedCards: number;
+  demoEmployerLink: string;
+  demoEmployerAccessCode: string;
 };
 
 /**
@@ -201,6 +207,18 @@ export async function ensureDemoData(context: TenantContext, staffId = 'demo-see
     existingEmployers.add(poster.employerName.toLowerCase());
     createdJobs += 1;
   }
+
+  const demoEmployer = context.store.findEmployerByName(DEMO_EMPLOYER_NAME);
+  if (demoEmployer === null) throw new Error('demo employer was not created');
+
+  const stableDemoEmployer = context.store.setEmployerAccessCode(demoEmployer.id, DEMO_EMPLOYER_PAGE_CODE);
+  context.store.revokeGrants(stableDemoEmployer.id, 'access_code');
+  context.store.createAccessGrant({
+    employerId: stableDemoEmployer.id,
+    kind: 'access_code',
+    secretHash: hashSecret(DEMO_EMPLOYER_ACCESS_CODE),
+    expiresAt: null,
+  });
 
   let applicant = context.store.getApplicantByPhone(DEMO_APPLICANT_PHONE);
   let applicantCreated = false;
@@ -257,5 +275,7 @@ export async function ensureDemoData(context: TenantContext, staffId = 'demo-see
     membershipActivated,
     applicantPhone: DEMO_APPLICANT_PHONE,
     feedCards: context.swipe.feed(applicant.id, 100).length,
+    demoEmployerLink: context.intake.linkFor(DEMO_EMPLOYER_PAGE_CODE),
+    demoEmployerAccessCode: DEMO_EMPLOYER_ACCESS_CODE,
   };
 }
