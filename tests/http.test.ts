@@ -190,6 +190,79 @@ test('the agency API refuses a missing or wrong key', async (t) => {
   assert.equal((await call(base, '/api/agency/overview', { key: KEY })).status, 200);
 });
 
+test('subscription paywall locks the deck and the agency can see subscriber status', async (t) => {
+  const { base, kobe } = await serve(t);
+  const published = await publish(kobe);
+
+  const registration = await call(base, '/api/applicants/register', {
+    body: {
+      fullName: 'Paywall Test',
+      phone: '+255711002222',
+      location: 'Dar es Salaam',
+      categories: ['hospitality'],
+      experienceYears: 1,
+      skills: ['Customer service'],
+      languages: ['Swahili'],
+      willingToRelocate: true,
+    },
+  });
+  const registered = registration.body as unknown as {
+    applicant: { id: string };
+    session: { token: string };
+  };
+
+  const locked = await call(base, `/api/applicants/${registered.applicant.id}/feed`, {
+    token: registered.session.token,
+  });
+  assert.equal((locked.body as unknown as { cards: unknown[] }).cards.length, 0);
+  assert.equal((locked.body as unknown as { paywall: { required: boolean } }).paywall.required, true);
+
+  const before = await call(base, '/api/agency/subscribers', { key: KEY });
+  const unsubscribed = (before.body as unknown as {
+    subscribers: { applicant: { id: string }; status: string }[];
+  }).subscribers.find((entry) => entry.applicant.id === registered.applicant.id);
+  assert.equal(unsubscribed?.status, 'unsubscribed');
+
+  const payment = await call(base, `/api/applicants/${registered.applicant.id}/payments`, {
+    token: registered.session.token,
+    body: { planCode: 'non_certificate', amountTzs: 15_000, reference: 'PAYWALL-TEST-1' },
+  });
+  const paymentId = (payment.body as unknown as { payment: { id: string } }).payment.id;
+
+  const pendingFeed = await call(base, `/api/applicants/${registered.applicant.id}/feed`, {
+    token: registered.session.token,
+  });
+  assert.equal((pendingFeed.body as unknown as { cards: unknown[] }).cards.length, 0);
+  assert.equal(
+    (pendingFeed.body as unknown as { paywall: { membership: { pendingPayment: { reference: string } } } })
+      .paywall.membership.pendingPayment.reference,
+    'PAYWALL-TEST-1',
+  );
+
+  const pendingAdmin = await call(base, '/api/agency/subscribers', { key: KEY });
+  const pending = (pendingAdmin.body as unknown as {
+    subscribers: { applicant: { id: string }; status: string }[];
+  }).subscribers.find((entry) => entry.applicant.id === registered.applicant.id);
+  assert.equal(pending?.status, 'pending_payment');
+
+  await call(base, `/api/agency/payments/${paymentId}/confirm`, { key: KEY, body: {} });
+
+  const unlocked = await call(base, `/api/applicants/${registered.applicant.id}/feed`, {
+    token: registered.session.token,
+  });
+  assert.equal((unlocked.body as unknown as { paywall: null }).paywall, null);
+  const cards = (unlocked.body as unknown as { cards: { jobId: string }[] }).cards;
+  assert.equal(cards.some((card) => card.jobId === published.job.id), true);
+
+  const after = await call(base, '/api/agency/subscribers', { key: KEY });
+  const active = (after.body as unknown as {
+    summary: { active: number };
+    subscribers: { applicant: { id: string }; status: string }[];
+  });
+  assert.equal(active.subscribers.find((entry) => entry.applicant.id === registered.applicant.id)?.status, 'active');
+  assert.ok(active.summary.active >= 1);
+});
+
 test('employer endpoints need a session and never leak another client', async (t) => {
   const { base, kobe } = await serve(t);
 
