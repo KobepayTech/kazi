@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { DEMO_APPLICANT_PHONE, ensureDemoData } from '../src/demo.ts';
+import {
+  DEMO_APPLICANT_PHONE,
+  DEMO_EMPLOYER_ACCESS_CODE,
+  DEMO_EMPLOYER_NAME,
+  DEMO_EMPLOYER_PAGE_CODE,
+  ensureDemoData,
+} from '../src/demo.ts';
 import { makeHarness } from './helpers.ts';
 
 test('demo seed creates a full swipe deck and an active demo applicant', async (t) => {
@@ -14,6 +20,14 @@ test('demo seed creates a full swipe deck and an active demo applicant', async (
   assert.equal(result.applicantCreated, true);
   assert.equal(result.membershipActivated, true);
   assert.equal(result.applicantPhone, DEMO_APPLICANT_PHONE);
+  assert.equal(result.demoEmployerLink, 'https://jobs.kobeos.test/e/DEMO01');
+  assert.equal(result.demoEmployerAccessCode, DEMO_EMPLOYER_ACCESS_CODE);
+
+  const demoEmployer = kobe.store.findEmployerByName(DEMO_EMPLOYER_NAME);
+  assert.ok(demoEmployer);
+  assert.equal(demoEmployer.accessCode, DEMO_EMPLOYER_PAGE_CODE);
+  const session = kobe.access.authenticateEmployer(demoEmployer, 'access_code', DEMO_EMPLOYER_ACCESS_CODE);
+  assert.equal(kobe.access.requireEmployer(session.token).id, demoEmployer.id);
 
   const applicant = kobe.store.getApplicantByPhone(DEMO_APPLICANT_PHONE);
   assert.ok(applicant);
@@ -39,5 +53,13 @@ test('demo seed is idempotent', async (t) => {
   assert.equal(second.createdJobs, 0);
   assert.equal(second.demoJobs, 8);
   assert.equal(second.feedCards, 8);
+  assert.equal(second.demoEmployerLink, 'https://jobs.kobeos.test/e/DEMO01');
+  assert.equal(second.demoEmployerAccessCode, '123456');
   assert.equal(kobe.store.listEmployers().filter((employer) => employer.name.endsWith('(Demo)')).length, 8);
+
+  const demoEmployer = kobe.store.findEmployerByName(DEMO_EMPLOYER_NAME);
+  assert.ok(demoEmployer);
+  assert.equal(demoEmployer.accessCode, DEMO_EMPLOYER_PAGE_CODE);
+  const session = kobe.access.authenticateEmployer(demoEmployer, 'access_code', DEMO_EMPLOYER_ACCESS_CODE);
+  assert.equal(kobe.access.requireEmployer(session.token).id, demoEmployer.id);
 });
