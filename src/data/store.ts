@@ -847,6 +847,22 @@ export class TenantStore {
     return rows.map(mapEmployer);
   }
 
+  setEmployerAccessCode(id: string, accessCode: string): Employer {
+    const normalized = accessCode.trim().toUpperCase();
+    const collision = this.db
+      .prepare('SELECT id FROM employers WHERE access_code = ? AND id <> ?')
+      .get(normalized, id) as Row | undefined;
+    if (collision !== undefined) throw new Error(`employer access code ${normalized} is already in use`);
+
+    this.db
+      .prepare('UPDATE employers SET access_code = ? WHERE tenant_id = ? AND id = ?')
+      .run(normalized, this.tenantId, id);
+
+    const employer = this.getEmployer(id);
+    if (employer === null) throw new Error('employer not found');
+    return employer;
+  }
+
   updateEmployerContact(
     id: string,
     contact: { contactName?: string | null; contactPhone?: string | null; contactEmail?: string | null },
