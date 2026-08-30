@@ -120,13 +120,19 @@
   <div class="grid2">
     <section class="panel">
       <h2>Payments to confirm</h2>
-      <div id="payments"></div>
+      <div id="payments"><p style="color:#5b6f66;margin:0">Connect with your staff key.</p></div>
     </section>
     <section class="panel">
       <h2>Client links</h2>
-      <div id="clients"></div>
+      <div id="clients"><p style="color:#5b6f66;margin:0">🔒 Connect with your staff key to load private employer links.</p></div>
     </section>
   </div>
+
+  <section class="panel">
+    <h2>Subscribers</h2>
+    <div class="tiles" id="subscriberSummary" style="margin-bottom:14px"></div>
+    <div id="subscribers"><p style="color:#5b6f66;margin:0">🔒 Connect with your staff key to load subscribers.</p></div>
+  </section>
 
   <div class="grid2">
     <section class="panel">
@@ -307,18 +313,28 @@ function renderQueue(items) {
   });
 }
 
+function renderLockedAdmin(message = 'Connect with your staff key to load private data.') {
+  $('clients').innerHTML = `<p style="color:#5b6f66;margin:0">🔒 ${esc(message)}</p>`;
+  $('payments').innerHTML = `<p style="color:#5b6f66;margin:0">🔒 ${esc(message)}</p>`;
+  $('subscribers').innerHTML = `<p style="color:#5b6f66;margin:0">🔒 ${esc(message)}</p>`;
+  $('subscriberSummary').innerHTML = '';
+}
+
 async function refresh() {
-  const [overview, clients, payments, plans, queue] = await Promise.all([
+  const [overview, clients, payments, plans, queue, subscriberData] = await Promise.all([
     api('/api/agency/overview'), api('/api/agency/clients'),
     api('/api/agency/payments'), api('/api/agency/plans'), api('/api/agency/queue'),
+    api('/api/agency/subscribers'),
   ]);
 
   renderQueue(queue.queue);
 
   const s = overview.summary;
   $('summary').innerHTML = [
-    ['Clients', s.clients], ['Jobs', s.jobs], ['Applicants', s.applications],
-    ['Shortlisted', s.shortlisted], ['Hired', s.hired],
+    ['Clients', s.clients], ['Jobs', s.jobs], ['Applications', s.applications],
+    ['Active subscribers', subscriberData.summary.active],
+    ['Pending subscriptions', subscriberData.summary.pendingPayment],
+    ['Hired', s.hired],
   ].map(([label, value]) => `<div class="tile"><b>${value}</b><span>${label}</span></div>`).join('');
 
   $('overview').innerHTML = overview.rows.length === 0
@@ -342,14 +358,52 @@ async function refresh() {
         </div>`).join('');
 
   $('clients').innerHTML = clients.clients.length === 0
-    ? '<p style="color:#5b6f66;margin:0">No clients yet.</p>'
+    ? '<p style="color:#5b6f66;margin:0">No employer clients yet.</p>'
     : clients.clients.map((client) => `
         <div class="field" style="grid-template-columns:1fr auto">
-          <span><strong>${esc(client.employer.name)}</strong><br>
-            <code>${esc(client.employerLink)}</code><br>
-            <small style="color:#5b6f66">${client.applications} applicants · ${client.newApplications} new</small></span>
-          <button class="ghost" data-employer="${esc(client.employer.id)}">New access code</button>
+          <span style="min-width:0"><strong>${esc(client.employer.name)}</strong><br>
+            <a href="${esc(client.employerLink)}" target="_blank" rel="noopener" style="word-break:break-all">${esc(client.employerLink)}</a><br>
+            <small style="color:#5b6f66">${client.applications} applications · ${client.newApplications} new</small></span>
+          <span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+            <a class="ghost" href="${esc(client.employerLink)}" target="_blank" rel="noopener" style="text-decoration:none">Open</a>
+            <button class="ghost" data-copy-client="${esc(client.employerLink)}">Copy link</button>
+            <button class="ghost" data-employer="${esc(client.employer.id)}">New code</button>
+          </span>
         </div>`).join('');
+
+  const statusLabel = {
+    active: 'Active',
+    pending_payment: 'Pending payment',
+    expired: 'Expired',
+    unsubscribed: 'Not subscribed',
+  };
+  $('subscriberSummary').innerHTML = [
+    ['Registered', subscriberData.summary.registered],
+    ['Active', subscriberData.summary.active],
+    ['Pending', subscriberData.summary.pendingPayment],
+    ['Expired', subscriberData.summary.expired],
+    ['Not subscribed', subscriberData.summary.unsubscribed],
+  ].map(([label, value]) => `<div class="tile"><b>${value}</b><span>${label}</span></div>`).join('');
+
+  $('subscribers').innerHTML = subscriberData.subscribers.length === 0
+    ? '<p style="color:#5b6f66;margin:0">No applicants registered yet.</p>'
+    : subscriberData.subscribers.map((entry) => {
+        const colour =
+          entry.status === 'active' ? '#0f7a4f' :
+          entry.status === 'pending_payment' ? '#9a6514' :
+          entry.status === 'expired' ? '#a13f36' : '#5b6f66';
+        const plan = entry.plan?.name ?? 'No package';
+        const expiry = entry.expiresAt ? new Date(entry.expiresAt).toLocaleDateString() : '—';
+        const payment = entry.latestPayment
+          ? ` · ref ${esc(entry.latestPayment.reference)} · ${esc(entry.latestPayment.status)}`
+          : '';
+        return `<div class="field" style="grid-template-columns:1fr auto">
+          <span><strong>${esc(entry.applicant.fullName)}</strong><br>
+            <small style="color:#5b6f66">${esc(entry.applicant.phone)} · ${esc(plan)}${payment}</small></span>
+          <span style="text-align:right"><strong style="color:${colour}">${statusLabel[entry.status]}</strong><br>
+            <small style="color:#5b6f66">Expires: ${esc(expiry)}</small></span>
+        </div>`;
+      }).join('');
 
   $('plans').innerHTML = plans.plans.map((plan) => `
     <div class="field" style="grid-template-columns:1fr 120px auto">
@@ -380,6 +434,16 @@ function bind() {
         await api(`/api/agency/payments/${button.dataset.reject}/reject`, { method: 'POST', body: JSON.stringify({ note }) });
         await refresh();
       } catch (error) { notice('err', esc(error.message)); }
+    });
+  });
+  document.querySelectorAll('[data-copy-client]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(button.dataset.copyClient);
+        notice('ok', 'Employer link copied.');
+      } catch {
+        notice('err', 'Could not copy the link. Press and hold the link to copy it.');
+      }
     });
   });
   document.querySelectorAll('[data-employer]').forEach((button) => {
@@ -421,11 +485,27 @@ function listen() {
 
 $('connect').addEventListener('click', () => {
   key = $('key').value.trim();
+  if (!key) {
+    renderLockedAdmin('Enter the staff key above, then tap Connect.');
+    notice('err', 'Staff key required.');
+    return;
+  }
   sessionStorage.setItem('kobeos_agency_key', key);
-  refresh().then(listen).catch((error) => notice('err', esc(error.message)));
+  refresh().then(() => {
+    notice('ok', 'Staff access connected.');
+    listen();
+  }).catch((error) => {
+    renderLockedAdmin('Staff access is not connected.');
+    notice('err', esc(error.message));
+  });
 });
 
-if (key) { $('key').value = key; refresh().then(listen).catch(() => {}); }
+if (key) {
+  $('key').value = key;
+  refresh().then(listen).catch(() => renderLockedAdmin('Saved staff key is no longer valid. Reconnect above.'));
+} else {
+  renderLockedAdmin();
+}
 </script>
 </body>
 </html>
