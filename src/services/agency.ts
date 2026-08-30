@@ -1,5 +1,5 @@
 import type { JobDraft, TenantStore } from '../data/store.ts';
-import type { AgencyOverviewRow, Applicant, Employer, JobStats, Payment } from '../domain/types.ts';
+import type { AgencyOverviewRow, Applicant, Employer, JobStats, Membership, MembershipPlan, Payment } from '../domain/types.ts';
 import type { AccessService, IssuedSecret } from './access.ts';
 import { AppError } from './errors.ts';
 import { AGENCY_SCOPE_ID, EventBus } from './events.ts';
@@ -18,6 +18,25 @@ export type ClientRow = {
   applications: number;
   newApplications: number;
   lastSeenAt: string | null;
+};
+
+export type SubscriberStatus = 'active' | 'pending_payment' | 'expired' | 'unsubscribed';
+
+export type SubscriberRow = {
+  applicant: Applicant;
+  membership: Membership | null;
+  plan: MembershipPlan | null;
+  latestPayment: Payment | null;
+  status: SubscriberStatus;
+  expiresAt: string | null;
+};
+
+export type SubscriberSummary = {
+  registered: number;
+  active: number;
+  pendingPayment: number;
+  expired: number;
+  unsubscribed: number;
 };
 
 /**
@@ -102,6 +121,48 @@ export class AgencyService {
 
   applicants(): Applicant[] {
     return this.store.listApplicants();
+  }
+
+  subscribers(): { summary: SubscriberSummary; subscribers: SubscriberRow[] } {
+    const payments = this.store.listPayments();
+    const now = Date.now();
+    const subscribers = this.store.listApplicants().map((applicant): SubscriberRow => {
+      const membership = this.store.getLatestMembership(applicant.id);
+      const plan = membership === null ? null : this.store.getPlan(membership.planCode);
+      const latestPayment = membership === null
+        ? null
+        : payments.find((payment) => payment.membershipId === membership.id) ?? null;
+
+      let status: SubscriberStatus = 'unsubscribed';
+      if (membership !== null) {
+        if (membership.status === 'pending_payment') status = 'pending_payment';
+        else if (
+          membership.status === 'active' &&
+          (membership.expiresAt === null || new Date(membership.expiresAt).getTime() > now)
+        ) status = 'active';
+        else status = 'expired';
+      }
+
+      return {
+        applicant,
+        membership,
+        plan,
+        latestPayment,
+        status,
+        expiresAt: membership?.expiresAt ?? null,
+      };
+    });
+
+    return {
+      summary: {
+        registered: subscribers.length,
+        active: subscribers.filter((entry) => entry.status === 'active').length,
+        pendingPayment: subscribers.filter((entry) => entry.status === 'pending_payment').length,
+        expired: subscribers.filter((entry) => entry.status === 'expired').length,
+        unsubscribed: subscribers.filter((entry) => entry.status === 'unsubscribed').length,
+      },
+      subscribers,
+    };
   }
 
   pendingPayments(): (Payment & { applicantName: string; planName: string })[] {
