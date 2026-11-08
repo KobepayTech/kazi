@@ -65,6 +65,11 @@
   .confirm { background:var(--green); border:0; color:#fff; }
 
   .notice { padding:12px 14px; border-radius:12px; font-size:14px; margin-bottom:12px; }
+  .document-alert { cursor:pointer; transition:transform .15s ease, box-shadow .15s ease; }
+  .document-alert:active { transform:scale(.995); }
+  .document-alert:focus-visible { outline:2px solid var(--green); outline-offset:2px; }
+  .document-panel { transition:box-shadow .2s ease, outline-color .2s ease; }
+  .document-panel.document-focus { outline:3px solid rgba(47,132,89,.24); box-shadow:0 0 0 5px rgba(47,132,89,.08); }
   .ok { background:#e6f4ec; border:1px solid #b7dfc8; }
   .warn { background:#fdf3e3; border:1px solid #f0d9a8; }
   .err { background:#fbeae8; border:1px solid #f0c2bc; }
@@ -330,6 +335,16 @@ function requestReminderPermission() {
   });
 }
 
+function jumpToMissingDocuments(applicationId) {
+  const panel = document.querySelector(`[data-document-panel="${CSS.escape(applicationId)}"]`);
+  if (!panel) return;
+  panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  panel.classList.add('document-focus');
+  const missingRow = panel.querySelector('[data-missing-document]');
+  missingRow?.focus?.({ preventScroll: true });
+  setTimeout(() => panel.classList.remove('document-focus'), 1800);
+}
+
 function notifyMissingDocuments(applications) {
   const incomplete = applications.filter((entry) => !entry.documents.complete);
   const bar = $('documentReminder');
@@ -340,11 +355,32 @@ function notifyMissingDocuments(applications) {
   const missingCount = new Set(incomplete.flatMap((entry) =>
     entry.documents.documents.filter((doc) => !doc.satisfied).map((doc) => doc.label)
   )).size;
+  const mostUrgent = [...incomplete].sort(
+    (left, right) => new Date(left.documents.dueAt).getTime() - new Date(right.documents.dueAt).getTime(),
+  )[0];
   const enable = 'Notification' in window && Notification.permission === 'default'
     ? '<button class="link" id="enableDocAlerts">Enable alerts</button>' : '';
-  bar.innerHTML = `<div class="notice warn"><strong>Documents need attention.</strong>
-    ${missingCount} document type(s) are still missing from active applications. ${enable}</div>`;
-  $('enableDocAlerts')?.addEventListener('click', requestReminderPermission);
+  bar.innerHTML = `<div class="notice warn document-alert" id="documentAlertJump" role="button" tabindex="0"
+      aria-label="Open the most urgent missing application document">
+      <strong>Documents need attention.</strong>
+      ${missingCount} document type(s) are still missing from active applications.
+      <span class="link" style="margin-left:4px">Review now →</span> ${enable}
+    </div>`;
+
+  const openMissing = (event) => {
+    if (event?.target?.id === 'enableDocAlerts') return;
+    if (mostUrgent) jumpToMissingDocuments(mostUrgent.applicationId);
+  };
+  $('documentAlertJump')?.addEventListener('click', openMissing);
+  $('documentAlertJump')?.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    openMissing(event);
+  });
+  $('enableDocAlerts')?.addEventListener('click', (event) => {
+    event.stopPropagation();
+    requestReminderPermission();
+  });
 
   if ('Notification' in window && Notification.permission === 'granted') {
     const urgent = incomplete.find((entry) => {
@@ -355,9 +391,15 @@ function notifyMissingDocuments(applications) {
       const key = `kazi_doc_alert_${urgent.applicationId}_${new Date().toISOString().slice(0, 10)}`;
       if (!sessionStorage.getItem(key)) {
         const labels = urgent.documents.documents.filter((doc) => !doc.satisfied).map((doc) => doc.label).join(', ');
-        new Notification('Kazi: application documents due', {
+        const notification = new Notification('Kazi: application documents due', {
           body: `${urgent.jobTitle}: ${labels}. ${countdownText(urgent.documents.dueAt)}.`,
         });
+        notification.onclick = () => {
+          window.focus();
+          showTab('applications');
+          requestAnimationFrame(() => jumpToMissingDocuments(urgent.applicationId));
+          notification.close();
+        };
         sessionStorage.setItem(key, '1');
       }
     }
@@ -693,13 +735,15 @@ async function loadApplications() {
     : data.applications.map((entry) => {
         const bundle = entry.documents;
         const missing = bundle.documents.filter((doc) => !doc.satisfied);
-        const docs = `<div style="margin-top:10px;padding:10px;border:1px solid var(--line);border-radius:10px">
+        const docs = `<div class="document-panel" data-document-panel="${esc(entry.applicationId)}"
+            style="margin-top:10px;padding:10px;border:1px solid var(--line);border-radius:10px">
           <div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
             <strong style="font-size:13px">Documents ${bundle.satisfiedCount}/${bundle.requiredCount}</strong>
             <span class="tag" data-doc-due="${esc(bundle.dueAt)}">${bundle.complete ? 'Complete' : countdownText(bundle.dueAt)}</span>
           </div>
           <div style="margin-top:6px;font-size:13px">
-            ${bundle.documents.map((doc) => `<div style="display:flex;justify-content:space-between;gap:10px;padding:4px 0">
+            ${bundle.documents.map((doc) => `<div ${doc.satisfied ? '' : `data-missing-document="${esc(doc.kind)}" tabindex="-1"`}
+                style="display:flex;justify-content:space-between;gap:10px;padding:4px 0">
               <span>${doc.satisfied ? '✓' : '⚠'} ${esc(doc.label)}</span>
               ${doc.satisfied
                 ? (doc.filePath ? `<a class="link" href="${esc(doc.filePath)}" target="_blank">View</a>` : '<small>Ready</small>')
